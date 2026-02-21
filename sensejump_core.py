@@ -5,6 +5,7 @@ import hashlib
 import math
 import random
 import re
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qsl
@@ -72,6 +73,7 @@ class GeneratedLevel:
     solution: list[Instruction]
     solution_text: str
     solution_steps: int
+    min_moves_to_exit: int
     attempts_used: int
 
 
@@ -707,6 +709,44 @@ def block_count(board: list[list[bool]]) -> int:
     return sum(1 for row in board for cell in row if cell)
 
 
+def minimum_moves_to_exit(level: Level) -> int | None:
+    """
+    Shortest movement-only path to exit the board from the start cell.
+    Counts only orthogonal moves through open cells; turning/sensing/jumps are ignored.
+    """
+    width = level.width
+    height = level.height
+    start_x = level.start_x
+    start_y = level.start_y
+
+    if not in_bounds(start_x, start_y, width, height):
+        return None
+    if level.board[start_y][start_x]:
+        return None
+
+    visited = [[False for _ in range(width)] for _ in range(height)]
+    queue: deque[tuple[int, int, int]] = deque()
+    queue.append((start_x, start_y, 0))
+    visited[start_y][start_x] = True
+
+    while queue:
+        x, y, steps = queue.popleft()
+        if x == 0 or y == 0 or x == width - 1 or y == height - 1:
+            return steps + 1
+
+        for dx, dy in DIR_DELTAS:
+            nx = x + dx
+            ny = y + dy
+            if not in_bounds(nx, ny, width, height):
+                continue
+            if visited[ny][nx] or level.board[ny][nx]:
+                continue
+            visited[ny][nx] = True
+            queue.append((nx, ny, steps + 1))
+
+    return None
+
+
 def has_straight_run_at_least(
     level: Level,
     program: list[Instruction],
@@ -956,6 +996,9 @@ def generate_level(
         level_text = format_level(level)
         level_hash = compute_level_hash(level)
         solution_text = format_program(solution)
+        min_moves_to_exit = minimum_moves_to_exit(level)
+        if min_moves_to_exit is None:
+            raise RuntimeError("Generated level has no movement-only path to exit.")
         return GeneratedLevel(
             level=level,
             level_text=level_text,
@@ -963,6 +1006,7 @@ def generate_level(
             solution=solution,
             solution_text=solution_text,
             solution_steps=solution_steps,
+            min_moves_to_exit=min_moves_to_exit,
             attempts_used=attempt,
         )
 

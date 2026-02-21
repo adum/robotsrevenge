@@ -102,6 +102,7 @@ def build_solution_payload(
         "solution_hash": generated.level.solution_hash,
         "solution_program": generated.solution_text,
         "solution_steps": generated.solution_steps,
+        "min_moves_to_exit": generated.min_moves_to_exit,
         "generator": {
             "seed": level_seed,
             "attempts_used": generated.attempts_used,

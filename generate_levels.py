@@ -226,8 +226,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--level-seed-retries",
         type=int,
-        default=24,
-        help="How many different per-level RNG seeds to try before failing a level (default: 24).",
+        default=0,
+        help=(
+            "How many different per-level RNG seeds to try before failing a level "
+            "(0 = infinite, default: 0)."
+        ),
     )
     parser.add_argument(
         "--progressive-intensity",
@@ -262,6 +265,7 @@ def build_solution_payload(
         "solution_hash": generated.level.solution_hash,
         "solution_program": generated.solution_text,
         "solution_steps": generated.solution_steps,
+        "min_moves_to_exit": generated.min_moves_to_exit,
         "generator": {
             "seed": level_seed,
             "attempts_used": generated.attempts_used,
@@ -308,8 +312,8 @@ def main(argv: list[str]) -> int:
     if args.max_straight_run < 0:
         print("Error: --max-straight-run must be >= 0.", file=sys.stderr)
         return 2
-    if args.level_seed_retries < 1:
-        print("Error: --level-seed-retries must be >= 1.", file=sys.stderr)
+    if args.level_seed_retries < 0:
+        print("Error: --level-seed-retries must be >= 0.", file=sys.stderr)
         return 2
     if args.progressive_difficulty and args.progressive_max_size < base_size:
         print(
@@ -345,7 +349,7 @@ def main(argv: list[str]) -> int:
         last_error = None
         seed_tries_used = 0
 
-        for _ in range(args.level_seed_retries):
+        while args.level_seed_retries == 0 or seed_tries_used < args.level_seed_retries:
             seed_tries_used += 1
             candidate_seed = batch_rng.randrange(0, 2**63)
             level_tuning_rng = random.Random(candidate_seed ^ 0x9E3779B97F4A7C15)
@@ -398,7 +402,7 @@ def main(argv: list[str]) -> int:
             f"(size={options.width}x{options.height}, density={options.density * 100.0:.1f}%, "
             f"target_sol={options.solution_length}, plim={options.program_limit}, "
             f"elim={options.execution_limit}, seed_tries={seed_tries_used}, attempts={generated.attempts_used}, "
-            f"solution_steps={generated.solution_steps})"
+            f"solution_steps={generated.solution_steps}, min_moves_to_exit={generated.min_moves_to_exit})"
         )
 
     return 0

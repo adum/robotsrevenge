@@ -57,6 +57,7 @@
   - `solution_hash`: hash of canonical `solution_program`.
   - `solution_program`: canonical instruction text (e.g. `F S J+2 R J-1`).
   - `solution_steps`: expected steps to escape.
+  - `min_moves_to_exit`: shortest movement-only path length to leave the board from start.
   - `generator`: seed/settings metadata.
 
 ## Tooling
