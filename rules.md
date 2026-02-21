@@ -6,7 +6,7 @@
 
 ## Board
 - Each cell is either empty `.` or blocked `X`.
-- The robot starts on a specific cell with a facing direction (`N`, `E`, `S`, `W`).
+- The robot starts on a specific cell, always facing **North**.
 
 ## Program Model
 - The robot executes instructions from index `0`.
@@ -37,13 +37,13 @@
 
 ## Level File Format (`.level`)
 - Public level files use a single query-string style line:
-  - `v=1&id=12&x=11&y=11&board=...,...,...&sx=5&sy=5&sd=E&plim=14&elim=420&solhash=sha256:...`
+  - `v=2&id=12&x=11&y=11&board=...,...,...&sx=5&sy=5&plim=14&elim=420&solhash=sha256:...`
 - Fields:
   - `v`: format version.
   - `id`: level id.
   - `x`, `y`: width and height.
   - `board`: comma-separated rows using `.` (empty) and `X` (blocked).
-  - `sx`, `sy`, `sd`: start position and direction (`N`, `E`, `S`, `W`).
+  - `sx`, `sy`: start position (start direction is always North and is not encoded).
   - `plim`: program-length limit for this level.
   - `elim`: execution-step limit for this level.
   - `solhash`: sha256 hash of the canonical hidden solution text.

@@ -4,7 +4,7 @@ Visualize a SenseJump level in the terminal.
 
 Usage:
   python3 visualize_level.py levels/1.level
-  python3 visualize_level.py "v=1&x=11&y=11&board=...,...&sx=5&sy=5&sd=E&plim=14&elim=420"
+  python3 visualize_level.py "v=2&x=11&y=11&board=...,...&sx=5&sy=5&plim=14&elim=420"
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def render(level: core.Level, use_color: bool) -> str:
     level_name = level.level_id if level.level_id is not None else "?"
     lines.append(
         f"SenseJump level {level_name} ({level.width}x{level.height}) "
-        f"start=({level.start_x},{level.start_y},{core.DIR_ORDER[level.start_dir]}) "
+        f"start=({level.start_x},{level.start_y},{core.DIR_ORDER[core.NORTH_DIR]}) "
         f"plim={level.program_limit} elim={level.execution_limit}"
     )
     if level.solution_hash:
@@ -51,14 +51,14 @@ def render(level: core.Level, use_color: bool) -> str:
             is_blocked = level.board[y][x]
             if use_color:
                 if is_start:
-                    row.append(color_block(COLOR_START, DIR_CHARS[level.start_dir] + " "))
+                    row.append(color_block(COLOR_START, DIR_CHARS[core.NORTH_DIR] + " "))
                 elif is_blocked:
                     row.append(color_block(COLOR_BLOCKED))
                 else:
                     row.append(color_block(COLOR_EMPTY))
             else:
                 if is_start:
-                    row.append(DIR_CHARS[level.start_dir] + " ")
+                    row.append(DIR_CHARS[core.NORTH_DIR] + " ")
                 elif is_blocked:
                     row.append("##")
                 else:
@@ -91,4 +91,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

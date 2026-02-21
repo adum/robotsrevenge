@@ -14,6 +14,7 @@ PROGRAM_OPS = ("F", "L", "R", "S", "J")
 DIR_ORDER = ("N", "E", "S", "W")
 DIR_TO_INDEX = {name: index for index, name in enumerate(DIR_ORDER)}
 DIR_DELTAS = ((0, -1), (1, 0), (0, 1), (-1, 0))
+NORTH_DIR = DIR_TO_INDEX["N"]
 TOKEN_SPLIT_RE = re.compile(r"[\s,;]+")
 INT_TOKEN_RE = re.compile(r"^[+-]?\d+$")
 
@@ -150,14 +151,9 @@ def parse_level(level_raw: str) -> Level:
     if not in_bounds(start_x, start_y, width, height):
         raise LevelFormatError("Start coordinates sx, sy are out of bounds.")
 
-    start_dir_raw = params.get("sd", "E").strip().upper()
-    if start_dir_raw in DIR_TO_INDEX:
-        start_dir = DIR_TO_INDEX[start_dir_raw]
-    else:
-        try:
-            start_dir = wrap(int(start_dir_raw), 4)
-        except ValueError as exc:
-            raise LevelFormatError(f"Invalid start direction sd={start_dir_raw!r}.") from exc
+    if "sd" in params:
+        raise LevelFormatError("Parameter sd is no longer supported; start direction is always North.")
+    start_dir = NORTH_DIR
 
     program_limit = _parse_int_param(params, "plim", 14)
     execution_limit = _parse_int_param(params, "elim", 420)
@@ -172,7 +168,7 @@ def parse_level(level_raw: str) -> Level:
     if board[start_y][start_x]:
         raise LevelFormatError("Start cell cannot be blocked.")
 
-    version = _parse_int_param(params, "v", 1)
+    version = _parse_int_param(params, "v", 2)
     return Level(
         version=version,
         level_id=level_id,
@@ -209,7 +205,6 @@ def format_level(level: Level) -> str:
     parts.append(f"board={','.join(board_rows(level.board))}")
     parts.append(f"sx={level.start_x}")
     parts.append(f"sy={level.start_y}")
-    parts.append(f"sd={DIR_ORDER[level.start_dir]}")
     parts.append(f"plim={level.program_limit}")
     parts.append(f"elim={level.execution_limit}")
     if level.solution_hash:
@@ -305,7 +300,7 @@ def simulate_program(level: Level, program: list[Instruction], max_steps: int | 
             steps=0,
             x=level.start_x,
             y=level.start_y,
-            dir=level.start_dir,
+            dir=NORTH_DIR,
             pc=0,
             jump_exec_count=0,
             sense_exec_count=0,
@@ -313,7 +308,7 @@ def simulate_program(level: Level, program: list[Instruction], max_steps: int | 
 
     x = level.start_x
     y = level.start_y
-    dir_index = level.start_dir
+    dir_index = NORTH_DIR
     pc = 0
     steps = 0
     jump_exec_count = 0
@@ -492,7 +487,6 @@ def _build_constraint_trace(
     program: list[Instruction],
     start_x: int,
     start_y: int,
-    start_dir: int,
     width: int,
     height: int,
     max_steps: int,
@@ -503,7 +497,7 @@ def _build_constraint_trace(
 
     x = start_x
     y = start_y
-    dir_index = start_dir
+    dir_index = NORTH_DIR
     pc = 0
     steps = 0
     sense_exec_count = 0
@@ -728,7 +722,7 @@ def has_straight_run_at_least(
 
     x = level.start_x
     y = level.start_y
-    dir_index = level.start_dir
+    dir_index = NORTH_DIR
     pc = 0
     steps = 0
     n = len(program)
@@ -844,14 +838,12 @@ def _try_generate_level(
 ) -> tuple[Level, list[Instruction], int] | None:
     start_x = options.width // 2
     start_y = options.height // 2
-    start_dir = rng.randint(0, 3)
     hidden_solution = _random_program(options.solution_length, rng)
 
     trace = _build_constraint_trace(
         hidden_solution,
         start_x,
         start_y,
-        start_dir,
         options.width,
         options.height,
         options.execution_limit,
@@ -883,14 +875,14 @@ def _try_generate_level(
         return None
 
     level = Level(
-        version=1,
+        version=2,
         level_id=None if level_id is None else str(level_id),
         width=options.width,
         height=options.height,
         board=board,
         start_x=start_x,
         start_y=start_y,
-        start_dir=start_dir,
+        start_dir=NORTH_DIR,
         program_limit=options.program_limit,
         execution_limit=options.execution_limit,
         solution_hash=None,

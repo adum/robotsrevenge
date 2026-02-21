@@ -106,7 +106,7 @@ def simulate_with_trace(
                 steps=0,
                 x=level.start_x,
                 y=level.start_y,
-                dir=level.start_dir,
+                dir=core.NORTH_DIR,
                 pc=0,
                 jump_exec_count=0,
                 sense_exec_count=0,
@@ -117,7 +117,7 @@ def simulate_with_trace(
 
     x = level.start_x
     y = level.start_y
-    dir_index = level.start_dir
+    dir_index = core.NORTH_DIR
     pc = 0
     steps = 0
     jump_exec_count = 0
@@ -251,7 +251,7 @@ def render_trace_board(
             sensed_block = (x, y) in sensed_block_cells
             if use_color:
                 if is_start:
-                    row.append(color_block(COLOR_START, DIR_CHARS[level.start_dir] + " "))
+                    row.append(color_block(COLOR_START, DIR_CHARS[core.NORTH_DIR] + " "))
                 elif is_blocked and sensed_block:
                     row.append(color_block(COLOR_SENSED_BLOCK))
                 elif is_blocked:
@@ -262,7 +262,7 @@ def render_trace_board(
                     row.append(color_block(COLOR_EMPTY))
             else:
                 if is_start:
-                    row.append(DIR_CHARS[level.start_dir] + " ")
+                    row.append(DIR_CHARS[core.NORTH_DIR] + " ")
                 elif is_blocked and sensed_block:
                     row.append("!!")
                 elif is_blocked:
@@ -534,7 +534,7 @@ def main(argv: list[str]) -> int:
                 "[level] "
                 f"id={level.level_id or '?'} "
                 f"size={level.width}x{level.height} "
-                f"start=({level.start_x},{level.start_y},{core.DIR_ORDER[level.start_dir]}) "
+                f"start=({level.start_x},{level.start_y},{core.DIR_ORDER[core.NORTH_DIR]}) "
                 f"plim={level.program_limit} elim={level.execution_limit} "
                 f"mode=provided file={args.solution_file}",
                 file=sys.stderr,
@@ -561,7 +561,7 @@ def main(argv: list[str]) -> int:
                 "[level] "
                 f"id={level.level_id or '?'} "
                 f"size={level.width}x{level.height} "
-                f"start=({level.start_x},{level.start_y},{core.DIR_ORDER[level.start_dir]}) "
+                f"start=({level.start_x},{level.start_y},{core.DIR_ORDER[core.NORTH_DIR]}) "
                 f"plim={level.program_limit} elim={level.execution_limit} "
                 f"search_len={min_length}-{max_length} "
                 f"ops={''.join(ops)} "

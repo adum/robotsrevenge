@@ -704,6 +704,7 @@
         { name: "S", dx: 0, dy: 1, className: "dir-s" },
         { name: "W", dx: -1, dy: 0, className: "dir-w" },
       ];
+      const NORTH_DIR = 0;
       const OP_CODES = ["F", "L", "R", "S", "J"];
 
       const widthRange = document.getElementById("widthRange");
@@ -752,8 +753,8 @@
         width: 11,
         height: 11,
         board: [],
-        start: { x: 1, y: 1, dir: 1 },
-        robot: { x: 1, y: 1, dir: 1 },
+        start: { x: 1, y: 1, dir: NORTH_DIR },
+        robot: { x: 1, y: 1, dir: NORTH_DIR },
         pc: 0,
         lastPc: -1,
         stepCount: 0,
@@ -1242,7 +1243,7 @@
         levelMetaEl.innerHTML =
           `<div><strong>Grid:</strong> ${state.width} x ${state.height}</div>` +
           `<div><strong>Blocks:</strong> ${blocked} (${ratio}%)</div>` +
-          `<div><strong>Start:</strong> ${state.start.x}, ${state.start.y} facing ${DIRS[state.start.dir].name}</div>` +
+          `<div><strong>Start:</strong> ${state.start.x}, ${state.start.y} (facing North)</div>` +
           `<div><strong>Program Length Limit:</strong> ${state.programLimit}</div>` +
           `<div><strong>Execution Limit:</strong> ${state.maxSteps}</div>` +
           `<div><strong>Hidden Solver Length:</strong> ${state.hiddenSolution.length}</div>`;
@@ -1922,16 +1923,10 @@
         if (sx < 0 || sy < 0 || sx >= width || sy >= height) {
           throw new Error("Start coordinates are out of bounds.");
         }
-
-        const sdRaw = (params.get("sd") || "E").trim().toUpperCase();
-        let dir = DIRS.findIndex((entry) => entry.name === sdRaw);
-        if (dir < 0) {
-          const parsedDir = parseInt(sdRaw, 10);
-          if (!Number.isFinite(parsedDir)) {
-            throw new Error(`Invalid start direction: ${sdRaw}`);
-          }
-          dir = wrap(parsedDir, 4);
+        if (params.has("sd")) {
+          throw new Error("Parameter sd is no longer supported; start direction is always North.");
         }
+        const dir = NORTH_DIR;
 
         if (board[sy][sx]) {
           throw new Error("Start cell cannot be blocked.");
@@ -1970,7 +1965,7 @@
         state.width = loaded.width;
         state.height = loaded.height;
         state.board = loaded.board.map((row) => row.slice());
-        state.start = { x: loaded.start.x, y: loaded.start.y, dir: loaded.start.dir };
+        state.start = { x: loaded.start.x, y: loaded.start.y, dir: NORTH_DIR };
         state.hiddenSolution = [];
         state.programLimit = loaded.programLimit;
         state.maxSteps = loaded.maxSteps;
@@ -2018,7 +2013,7 @@
         const start = {
           x: Math.floor(options.width / 2),
           y: Math.floor(options.height / 2),
-          dir: randomInt(0, 3),
+          dir: NORTH_DIR,
         };
         const hiddenSolution = randomProgram(options.solutionLen);
         const trace = buildConstraintTrace(hiddenSolution, start, options.width, options.height, options.maxSteps);
@@ -2111,7 +2106,7 @@
         state.width = level.width;
         state.height = level.height;
         state.board = level.board;
-        state.start = { x: level.start.x, y: level.start.y, dir: level.start.dir };
+        state.start = { x: level.start.x, y: level.start.y, dir: NORTH_DIR };
         state.hiddenSolution = cloneProgram(level.hiddenSolution);
         state.programLimit = level.programLimit;
         state.maxSteps = level.maxSteps;
