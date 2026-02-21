@@ -51,19 +51,22 @@ def choose_level_options(
     speed_scale = 1.0 + 0.5 * (intensity - 1.0)
     effective_progress = clamp_float(progress * speed_scale, 0.0, 1.0)
     wave_scale = clamp_float(1.0 + 0.25 * (intensity - 1.0), 0.6, 3.0)
+    baseline_solution_length = min(args.solution_length, max(3, base_size + 1))
 
     # Mostly scale difficulty via solution/program length.
     base_solution_delta = max(6, int(round(span * 0.18)))
     scaled_solution_delta = max(1, int(round(base_solution_delta * intensity)))
-    solution_target_max = min(core.MAX_PROGRAM_LIMIT - 1, args.solution_length + scaled_solution_delta)
-    solution_trend = args.solution_length + (solution_target_max - args.solution_length) * effective_progress
-    solution_wave = wave_scale * (
-        1.1 * math.sin(level_number * 0.73) + 0.9 * math.sin(level_number * 0.21 + 0.4)
-    )
+    solution_target_max = min(core.MAX_PROGRAM_LIMIT - 1, baseline_solution_length + scaled_solution_delta)
+    solution_trend = baseline_solution_length + (solution_target_max - baseline_solution_length) * effective_progress
+    solution_wave_raw = 1.1 * math.sin(level_number * 0.73) + 0.9 * math.sin(level_number * 0.21 + 0.4)
+    solution_wave_anchor = 1.1 * math.sin(start_level * 0.73) + 0.9 * math.sin(start_level * 0.21 + 0.4)
+    solution_wave = wave_scale * (solution_wave_raw - solution_wave_anchor)
     solution_noise = level_rng.uniform(-0.7, 0.7) * wave_scale
     solution_length = int(round(solution_trend + solution_wave + solution_noise))
-    solution_floor = args.solution_length + int(
-        (solution_target_max - args.solution_length) * effective_progress * clamp_float(0.55 + 0.05 * intensity, 0.45, 0.9)
+    solution_floor = baseline_solution_length + int(
+        (solution_target_max - baseline_solution_length)
+        * effective_progress
+        * clamp_float(0.55 + 0.05 * intensity, 0.45, 0.9)
     )
     solution_length = max(solution_floor, solution_length)
     solution_length = clamp_int(solution_length, 3, core.MAX_PROGRAM_LIMIT - 1)
@@ -77,7 +80,7 @@ def choose_level_options(
     # Size increases more slowly than program complexity and fluctuates across the run.
     base_size_delta = max(
         2,
-        int(round((solution_target_max - args.solution_length) * 0.45)),
+        int(round((solution_target_max - baseline_solution_length) * 0.45)),
         int(round(span * 0.05)),
     )
     scaled_size_delta = max(2, int(round(base_size_delta * (0.6 + 0.4 * intensity))))
@@ -108,7 +111,7 @@ def choose_level_options(
     execution_bonus = int(
         round(
             (
-                (solution_length - args.solution_length) * 28
+                (solution_length - baseline_solution_length) * 28
                 + (size - base_size) * int(18 + 8 * effective_progress)
             )
             * execution_scale

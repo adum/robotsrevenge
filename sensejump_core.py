@@ -99,6 +99,12 @@ def wrap(value: int, mod: int) -> int:
     return normalized + mod if normalized < 0 else normalized
 
 
+def _effective_jump_offset(offset: int, program_length: int) -> int:
+    if offset == 0:
+        offset = 1
+    return wrap(offset, program_length)
+
+
 def in_bounds(x: int, y: int, width: int, height: int) -> bool:
     return 0 <= x < width and 0 <= y < height
 
@@ -452,8 +458,13 @@ def _random_program(length: int, rng: random.Random) -> list[Instruction]:
     max_jump_distance = min(5, max(1, length - 1))
     jump_offsets: list[int] = []
     for distance in range(1, max_jump_distance + 1):
-        jump_offsets.append(-distance)
-        jump_offsets.append(distance)
+        for offset in (-distance, distance):
+            effective_offset = _effective_jump_offset(offset, length)
+            if effective_offset in (0, 1):
+                continue
+            jump_offsets.append(offset)
+    if not jump_offsets:
+        jump_offsets = [1]
 
     program: list[Instruction] = []
     for _ in range(length):
@@ -747,6 +758,114 @@ def minimum_moves_to_exit(level: Level) -> int | None:
     return None
 
 
+def has_meaningless_jump_instruction(program: list[Instruction]) -> bool:
+    """
+    Returns True when program contains jumps that do not change control flow:
+    - effective jump of +1 (same as normal fall-through)
+    - effective jump of +0 (self-jump)
+    """
+    n = len(program)
+    if n <= 0:
+        return False
+
+    for inst in program:
+        if inst.op != "J":
+            continue
+        offset = inst.arg if isinstance(inst.arg, int) else 1
+        effective_offset = _effective_jump_offset(offset, n)
+        if effective_offset in (0, 1):
+            return True
+    return False
+
+
+def analyze_execution_path(
+    level: Level,
+    program: list[Instruction],
+    max_steps: int,
+) -> tuple[bool, bool]:
+    """
+    Returns (has_immediate_turn_cancel, has_dead_instruction) for the executed path.
+    """
+    n = len(program)
+    if n <= 0:
+        return False, False
+
+    x = level.start_x
+    y = level.start_y
+    dir_index = NORTH_DIR
+    pc = 0
+    steps = 0
+    limit = max_steps if max_steps > 0 else 1
+    seen_pc = [False for _ in range(n)]
+    seen_count = 0
+    previous_turn: str | None = None
+    has_turn_cancel = False
+
+    while steps < limit:
+        if not seen_pc[pc]:
+            seen_pc[pc] = True
+            seen_count += 1
+
+        inst = program[pc]
+        op = inst.op.upper()
+
+        if op == "F":
+            previous_turn = None
+            dx, dy = DIR_DELTAS[dir_index]
+            nx = x + dx
+            ny = y + dy
+            steps += 1
+            if not in_bounds(nx, ny, level.width, level.height):
+                break
+            if level.board[ny][nx]:
+                break
+            x = nx
+            y = ny
+            pc = wrap(pc + 1, n)
+            continue
+
+        if op == "L":
+            if previous_turn == "R":
+                has_turn_cancel = True
+            previous_turn = "L"
+            dir_index = wrap(dir_index - 1, 4)
+            pc = wrap(pc + 1, n)
+            steps += 1
+            continue
+
+        if op == "R":
+            if previous_turn == "L":
+                has_turn_cancel = True
+            previous_turn = "R"
+            dir_index = wrap(dir_index + 1, 4)
+            pc = wrap(pc + 1, n)
+            steps += 1
+            continue
+
+        if op == "S":
+            previous_turn = None
+            dx, dy = DIR_DELTAS[dir_index]
+            nx = x + dx
+            ny = y + dy
+            blocked = in_bounds(nx, ny, level.width, level.height) and level.board[ny][nx]
+            pc = wrap(pc + (1 if blocked else 2), n)
+            steps += 1
+            continue
+
+        if op == "J":
+            previous_turn = None
+            offset = inst.arg if isinstance(inst.arg, int) else 1
+            if offset == 0:
+                offset = 1
+            pc = wrap(pc + offset, n)
+            steps += 1
+            continue
+
+        break
+
+    return has_turn_cancel, seen_count < n
+
+
 def has_straight_run_at_least(
     level: Level,
     program: list[Instruction],
@@ -879,6 +998,8 @@ def _try_generate_level(
     start_x = options.width // 2
     start_y = options.height // 2
     hidden_solution = _random_program(options.solution_length, rng)
+    if has_meaningless_jump_instruction(hidden_solution):
+        return None
 
     trace = _build_constraint_trace(
         hidden_solution,
@@ -934,6 +1055,13 @@ def _try_generate_level(
     if result.jump_exec_count == 0 or result.sense_exec_count == 0:
         return None
     if result.steps < min_interesting_steps:
+        return None
+    has_turn_cancel, has_dead_instruction = analyze_execution_path(
+        level, hidden_solution, options.execution_limit
+    )
+    if has_turn_cancel:
+        return None
+    if has_dead_instruction:
         return None
     if has_straight_run_at_least(level, hidden_solution, options.max_straight_run, options.execution_limit):
         return None
