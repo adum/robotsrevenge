@@ -2008,7 +2008,68 @@
         }
       }
 
-      function tryGenerateLevel(options) {
+      function recordRejection(rejectionCounts, reason) {
+        if (!reason) {
+          return;
+        }
+        rejectionCounts[reason] = (rejectionCounts[reason] || 0) + 1;
+      }
+
+      function summarizeTopRejections(rejectionCounts, limit) {
+        const entries = Object.entries(rejectionCounts).sort((a, b) => b[1] - a[1]).slice(0, limit);
+        if (entries.length === 0) {
+          return "";
+        }
+        return entries.map(([reason, count]) => `${reason}=${count}`).join(", ");
+      }
+
+      function buildGenerationPhases(options) {
+        const perimeter = options.width + options.height;
+        return [
+          {
+            name: "strict",
+            attempts: 500,
+            minInterestingSteps: Math.max(10, Math.floor(perimeter * 0.75)),
+            requireJumpAndSense: true,
+            requireSenseTrueAndFalse: true,
+            rejectOneTurnEscape: true,
+            rejectLongStraightRun: true,
+            rejectEasyTwoDirection: true,
+            minFillRatio: 0.08,
+            maxFillRatio: 0.7,
+          },
+          {
+            name: "relaxed",
+            attempts: 500,
+            minInterestingSteps: Math.max(8, Math.floor(perimeter * 0.6)),
+            requireJumpAndSense: false,
+            requireSenseTrueAndFalse: true,
+            rejectOneTurnEscape: false,
+            rejectLongStraightRun: true,
+            rejectEasyTwoDirection: true,
+            minFillRatio: 0.06,
+            maxFillRatio: 0.74,
+          },
+          {
+            name: "forgiving",
+            attempts: 500,
+            minInterestingSteps: Math.max(6, Math.floor(perimeter * 0.5)),
+            requireJumpAndSense: false,
+            requireSenseTrueAndFalse: false,
+            rejectOneTurnEscape: false,
+            rejectLongStraightRun: false,
+            rejectEasyTwoDirection: false,
+            minFillRatio: 0.04,
+            maxFillRatio: 0.78,
+          },
+        ];
+      }
+
+      function tryGenerateLevel(options, phase, rejectionCounts) {
+        const reject = (reason) => {
+          recordRejection(rejectionCounts, reason);
+          return null;
+        };
         const start = {
           x: Math.floor(options.width / 2),
           y: Math.floor(options.height / 2),
@@ -2017,47 +2078,52 @@
         const hiddenSolution = randomProgram(options.solutionLen);
         const trace = buildConstraintTrace(hiddenSolution, start, options.width, options.height, options.maxSteps);
         if (!trace) {
-          return null;
+          return reject("trace_unsat");
         }
 
-        const minInterestingSteps = Math.max(10, Math.floor((options.width + options.height) * 0.75));
-        if (trace.steps < minInterestingSteps) {
-          return null;
+        if (trace.steps < phase.minInterestingSteps) {
+          return reject("trace_too_short");
         }
-        if (trace.jumpExecCount === 0 || trace.senseExecCount === 0) {
-          return null;
+        if (phase.requireJumpAndSense && (trace.jumpExecCount === 0 || trace.senseExecCount === 0)) {
+          return reject("trace_no_jump_or_sense");
         }
-        if (trace.senseTrue === 0 || trace.senseFalse === 0) {
-          return null;
+        if (phase.requireSenseTrueAndFalse && (trace.senseTrue === 0 || trace.senseFalse === 0)) {
+          return reject("trace_no_sense_split");
         }
 
         const board = materializeBoard(options.width, options.height, options.density, trace.requirements, start);
         if (hasStraightEscapeLaneFromStart(board, start)) {
-          return null;
+          return reject("straight_escape_lane");
         }
-        if (hasOneTurnEscapePathFromStart(board, start)) {
-          return null;
+        if (phase.rejectOneTurnEscape && hasOneTurnEscapePathFromStart(board, start)) {
+          return reject("one_turn_escape");
         }
         const result = simulateProgram(hiddenSolution, board, start, options.maxSteps);
         if (result.result !== "escape") {
-          return null;
+          return reject("solver_not_escape");
         }
-        if (result.jumpExecCount === 0 || result.senseExecCount === 0) {
-          return null;
+        if (phase.requireJumpAndSense && (result.jumpExecCount === 0 || result.senseExecCount === 0)) {
+          return reject("solver_no_jump_or_sense");
         }
-        if (result.steps < minInterestingSteps) {
-          return null;
+        if (phase.requireSenseTrueAndFalse && (result.senseTrue === 0 || result.senseFalse === 0)) {
+          return reject("solver_no_sense_split");
         }
-        if (hasStraightRunAtLeast(board, start, hiddenSolution, options.maxSteps, MAX_STRAIGHT_RUN)) {
-          return null;
+        if (result.steps < phase.minInterestingSteps) {
+          return reject("solver_too_short");
+        }
+        if (
+          phase.rejectLongStraightRun &&
+          hasStraightRunAtLeast(board, start, hiddenSolution, options.maxSteps, MAX_STRAIGHT_RUN)
+        ) {
+          return reject("long_straight_run");
         }
         const blocked = blockCount(board);
         const ratio = blocked / (options.width * options.height);
-        if (ratio < 0.08 || ratio > 0.7) {
-          return null;
+        if (ratio < phase.minFillRatio || ratio > phase.maxFillRatio) {
+          return reject("density_out_of_range");
         }
-        if (hasEasyTwoDirectionProgram(board, start, options.programLimit, options.maxSteps)) {
-          return null;
+        if (phase.rejectEasyTwoDirection && hasEasyTwoDirectionProgram(board, start, options.programLimit, options.maxSteps)) {
+          return reject("easy_two_direction_escape");
         }
 
         return {
@@ -2091,15 +2157,31 @@
         }
 
         let level = null;
-        for (let attempt = 0; attempt < 650; attempt += 1) {
-          level = tryGenerateLevel(options);
+        let selectedPhase = "";
+        let attemptsTried = 0;
+        const rejectionCounts = {};
+        const phases = buildGenerationPhases(options);
+        for (const phase of phases) {
+          selectedPhase = phase.name;
+          for (let attempt = 0; attempt < phase.attempts; attempt += 1) {
+            attemptsTried += 1;
+            level = tryGenerateLevel(options, phase, rejectionCounts);
+            if (level) {
+              break;
+            }
+          }
           if (level) {
             break;
           }
         }
 
         if (!level) {
-          setStatus("Generator could not find a valid level. Try lower density or shorter solver length.", "bad");
+          const topRejects = summarizeTopRejections(rejectionCounts, 3);
+          const rejectText = topRejects ? ` Top rejects: ${topRejects}.` : "";
+          setStatus(
+            `Generator could not find a valid level after ${attemptsTried} attempts.${rejectText} Try lower density or shorter solver length.`,
+            "bad"
+          );
           return;
         }
 
@@ -2120,7 +2202,10 @@
         buildBoardNodes();
         resetRun(false);
         updateLevelMeta();
-        setStatus(`Generated ${state.width}x${state.height}. Build your program.`, "ok");
+        setStatus(
+          `Generated ${state.width}x${state.height} (${selectedPhase} mode, ${attemptsTried} tries). Build your program.`,
+          "ok"
+        );
       }
 
       async function copyProgramToClipboard() {
