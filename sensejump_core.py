@@ -723,6 +723,51 @@ def block_count(board: list[list[bool]]) -> int:
     return sum(1 for row in board for cell in row if cell)
 
 
+def seal_unreachable_cells(level: Level) -> int:
+    """
+    Marks all open cells that are unreachable from the level start as blocked.
+    Returns the number of cells that were newly blocked.
+    """
+    width = level.width
+    height = level.height
+    start_x = level.start_x
+    start_y = level.start_y
+
+    if not in_bounds(start_x, start_y, width, height):
+        return 0
+    if level.board[start_y][start_x]:
+        return 0
+
+    reachable = [[False for _ in range(width)] for _ in range(height)]
+    queue: deque[tuple[int, int]] = deque()
+    queue.append((start_x, start_y))
+    reachable[start_y][start_x] = True
+
+    while queue:
+        x, y = queue.popleft()
+        for dx, dy in DIR_DELTAS:
+            nx = x + dx
+            ny = y + dy
+            if not in_bounds(nx, ny, width, height):
+                continue
+            if reachable[ny][nx] or level.board[ny][nx]:
+                continue
+            reachable[ny][nx] = True
+            queue.append((nx, ny))
+
+    sealed_count = 0
+    for y in range(height):
+        for x in range(width):
+            if level.board[y][x]:
+                continue
+            if reachable[y][x]:
+                continue
+            level.board[y][x] = True
+            sealed_count += 1
+
+    return sealed_count
+
+
 def minimum_moves_to_exit(level: Level) -> int | None:
     """
     Shortest movement-only path to exit the board from the start cell.

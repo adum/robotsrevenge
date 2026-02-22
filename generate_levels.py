@@ -341,6 +341,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--seal-unreachable",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "After generation, mark open cells unreachable from the start as blocked "
+            "before writing files (use --no-seal-unreachable to disable, default: true)."
+        ),
+    )
+    parser.add_argument(
         "--progressive-intensity",
         type=float,
         default=1.0,
@@ -362,6 +371,8 @@ def build_solution_payload(
     generated: core.GeneratedLevel,
     level_seed: int,
     best_of: int,
+    seal_unreachable: bool,
+    sealed_unreachable_cells: int,
     progressive_difficulty: bool,
     progressive_intensity: float,
     progressive_max_size: int,
@@ -379,6 +390,8 @@ def build_solution_payload(
         "generator": {
             "seed": level_seed,
             "best_of": best_of,
+            "seal_unreachable": seal_unreachable,
+            "sealed_unreachable_cells": sealed_unreachable_cells,
             "attempts_used": generated.attempts_used,
             "progressive_difficulty": progressive_difficulty,
             "progressive_intensity": progressive_intensity,
@@ -395,6 +408,25 @@ def build_solution_payload(
         },
         "created_at": timestamp_now_utc(),
     }
+
+
+def finalize_generated_level(generated: core.GeneratedLevel, seal_unreachable: bool) -> int:
+    if not seal_unreachable:
+        return 0
+    sealed_unreachable_cells = core.seal_unreachable_cells(generated.level)
+    if sealed_unreachable_cells <= 0:
+        return 0
+    generated.level_text = core.format_level(generated.level)
+    generated.level_hash = core.compute_level_hash(generated.level)
+    min_moves_to_exit = core.minimum_moves_to_exit(generated.level)
+    if min_moves_to_exit is None:
+        raise RuntimeError("Generated level has no movement-only path to exit after sealing unreachable cells.")
+    min_direction_types_to_exit = core.minimum_distinct_directions_to_exit(generated.level)
+    if min_direction_types_to_exit is None:
+        raise RuntimeError("Generated level has no direction-subset path to exit after sealing unreachable cells.")
+    generated.min_moves_to_exit = min_moves_to_exit
+    generated.min_direction_types_to_exit = min_direction_types_to_exit
+    return sealed_unreachable_cells
 
 
 def main(argv: list[str]) -> int:
@@ -463,6 +495,7 @@ def main(argv: list[str]) -> int:
         f"intensity={args.progressive_intensity}, progressive_max_size={args.progressive_max_size}, "
         f"max_straight_run={args.max_straight_run}, min_direction_types_to_exit={args.min_direction_types_to_exit}, "
         f"best_of={args.best_of}, reject_codes={'on' if args.show_reject_codes else 'off'}, "
+        f"seal_unreachable={'on' if args.seal_unreachable else 'off'}, "
         f"square_size_base={base_size})"
     )
 
@@ -570,6 +603,7 @@ def main(argv: list[str]) -> int:
             candidate_pool,
             key=lambda entry: entry[0].min_moves_to_exit,
         )
+        sealed_unreachable_cells = finalize_generated_level(generated, args.seal_unreachable)
 
         clear_progress_line(progress_width, show_live_progress)
         level_path = args.out_dir / f"{level_number}.level"
@@ -578,6 +612,8 @@ def main(argv: list[str]) -> int:
             generated=generated,
             level_seed=level_seed,
             best_of=args.best_of,
+            seal_unreachable=args.seal_unreachable,
+            sealed_unreachable_cells=sealed_unreachable_cells,
             progressive_difficulty=args.progressive_difficulty,
             progressive_intensity=args.progressive_intensity,
             progressive_max_size=args.progressive_max_size,
@@ -594,7 +630,7 @@ def main(argv: list[str]) -> int:
             f"(size={options.width}x{options.height}, density={options.density * 100.0:.1f}%, "
             f"target_sol={options.solution_length}, plim={options.program_limit}, "
             f"elim={options.execution_limit}, seed_tries={seed_tries_used}, best_of={len(candidate_pool)}/{args.best_of}, "
-            f"attempts={generated.attempts_used}, "
+            f"attempts={generated.attempts_used}, sealed_unreachable={sealed_unreachable_cells}, "
             f"solution_steps={generated.solution_steps}, min_moves_to_exit={generated.min_moves_to_exit}, "
             f"min_direction_types_to_exit={generated.min_direction_types_to_exit})"
         )

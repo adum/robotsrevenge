@@ -69,6 +69,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--seal-unreachable",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "After generation, mark open cells unreachable from the start as blocked "
+            "before writing outputs (use --no-seal-unreachable to disable, default: true)."
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=None,
@@ -102,6 +111,8 @@ def build_solution_payload(
     generated: core.GeneratedLevel,
     level_seed: int,
     density_percent: float,
+    seal_unreachable: bool,
+    sealed_unreachable_cells: int,
     options: core.GenerateOptions,
 ) -> dict[str, object]:
     return {
@@ -115,6 +126,8 @@ def build_solution_payload(
         "min_direction_types_to_exit": generated.min_direction_types_to_exit,
         "generator": {
             "seed": level_seed,
+            "seal_unreachable": seal_unreachable,
+            "sealed_unreachable_cells": sealed_unreachable_cells,
             "attempts_used": generated.attempts_used,
             "width": options.width,
             "height": options.height,
@@ -128,6 +141,25 @@ def build_solution_payload(
         },
         "created_at": timestamp_now_utc(),
     }
+
+
+def finalize_generated_level(generated: core.GeneratedLevel, seal_unreachable: bool) -> int:
+    if not seal_unreachable:
+        return 0
+    sealed_unreachable_cells = core.seal_unreachable_cells(generated.level)
+    if sealed_unreachable_cells <= 0:
+        return 0
+    generated.level_text = core.format_level(generated.level)
+    generated.level_hash = core.compute_level_hash(generated.level)
+    min_moves_to_exit = core.minimum_moves_to_exit(generated.level)
+    if min_moves_to_exit is None:
+        raise RuntimeError("Generated level has no movement-only path to exit after sealing unreachable cells.")
+    min_direction_types_to_exit = core.minimum_distinct_directions_to_exit(generated.level)
+    if min_direction_types_to_exit is None:
+        raise RuntimeError("Generated level has no direction-subset path to exit after sealing unreachable cells.")
+    generated.min_moves_to_exit = min_moves_to_exit
+    generated.min_direction_types_to_exit = min_direction_types_to_exit
+    return sealed_unreachable_cells
 
 
 def main(argv: list[str]) -> int:
@@ -152,6 +184,7 @@ def main(argv: list[str]) -> int:
 
     try:
         generated = core.generate_level(args.level_id, options, random.Random(args.seed))
+        sealed_unreachable_cells = finalize_generated_level(generated, args.seal_unreachable)
     except (ValueError, RuntimeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
@@ -161,7 +194,14 @@ def main(argv: list[str]) -> int:
         args.level_out.write_text(generated.level_text + "\n", encoding="utf-8")
 
     if args.solution_out:
-        payload = build_solution_payload(generated, args.seed, args.density, options)
+        payload = build_solution_payload(
+            generated,
+            args.seed,
+            args.density,
+            args.seal_unreachable,
+            sealed_unreachable_cells,
+            options,
+        )
         args.solution_out.parent.mkdir(parents=True, exist_ok=True)
         args.solution_out.write_text(
             json.dumps(payload, indent=2, sort_keys=False) + "\n",
