@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SenseJump Robot Prototype</title>
+    <title>Robot's Revenge</title>
     <style>
       @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap");
 
@@ -494,29 +494,14 @@
         background: var(--trail);
       }
 
-      .cell.robot::before {
-        content: "";
-        position: absolute;
-        width: 70%;
-        height: 70%;
-        left: 15%;
-        top: 15%;
-        border-radius: 9px;
-        background: var(--accent);
-        box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.22);
-      }
-
       .cell.robot::after {
         content: "";
         position: absolute;
-        left: 50%;
-        top: 50%;
-        transform: translate(-50%, -50%) rotate(var(--arrow-rot));
-        width: 0;
-        height: 0;
-        border-left: 7px solid transparent;
-        border-right: 7px solid transparent;
-        border-bottom: 14px solid #fff;
+        inset: 8%;
+        background: center / contain no-repeat url("./assets/robot.svg");
+        transform: rotate(var(--arrow-rot));
+        transform-origin: center;
+        pointer-events: none;
       }
 
       .cell.dir-n {
@@ -587,21 +572,21 @@
           </div>
           <div class="program-line-bottom">
             <div class="button-row five program-buttons">
-              <button id="addFBtn" class="secondary">+ ↑</button>
-              <button id="addLBtn" class="secondary turn-btn">+ ↺</button>
-              <button id="addRBtn" class="secondary turn-btn">+ ↻</button>
-              <button id="addSBtn" class="secondary">+ S</button>
-              <button id="addJBtn" class="secondary">+ J</button>
+              <button id="addFBtn" class="secondary" title="Add Forward (F): move one cell forward; exits if stepping off the board.">+ ↑</button>
+              <button id="addLBtn" class="secondary turn-btn" title="Add Left (L): rotate 90 degrees counter-clockwise.">+ ↺</button>
+              <button id="addRBtn" class="secondary turn-btn" title="Add Right (R): rotate 90 degrees clockwise.">+ ↻</button>
+              <button id="addSBtn" class="secondary" title="Add Sense (S): if the cell ahead is blocked, run next instruction; otherwise skip one.">+ S</button>
+              <button id="addJBtn" class="secondary" title="Add Jump (J±n): move the instruction pointer by an offset.">+ J</button>
             </div>
             <div class="program-edit">
               <div id="selectedInfo" class="selected-info">Selected: none</div>
-              <button id="deleteSelectedBtn" class="secondary">Delete</button>
+              <button id="deleteSelectedBtn" class="secondary" title="Delete the selected instruction.">Delete</button>
             </div>
             <div id="programSummary" class="summary program-summary">Length 0 / 14</div>
             <div class="button-row triple program-actions">
-              <button id="clearProgramBtn" class="secondary">Clear Program</button>
-              <button id="copyProgramBtn" class="secondary">Copy</button>
-              <button id="pasteProgramBtn" class="secondary">Paste</button>
+              <button id="clearProgramBtn" class="secondary" title="Remove all instructions from the editor.">Clear Program</button>
+              <button id="copyProgramBtn" class="secondary" title="Copy the current program text to the clipboard.">Copy</button>
+              <button id="pasteProgramBtn" class="secondary" title="Paste program text from the clipboard into the editor.">Paste</button>
             </div>
           </div>
         </section>
@@ -626,12 +611,12 @@
               </div>
             </div>
             <div class="button-row">
-              <button id="stepBtn" class="secondary">Step</button>
-              <button id="runBtn">Auto Run</button>
+              <button id="stepBtn" class="secondary" title="Execute one instruction.">Step</button>
+              <button id="runBtn" title="Run continuously using the selected delay until stop, crash, or escape.">Auto Run</button>
             </div>
             <div class="button-row">
-              <button id="resetBtn" class="secondary">Reset Robot</button>
-              <button id="clearTrailBtn" class="secondary">Clear Trail</button>
+              <button id="resetBtn" class="secondary" title="Reset robot position, facing, and execution state.">Reset Robot</button>
+              <button id="clearTrailBtn" class="secondary" title="Clear only the visual trail without resetting execution state.">Clear Trail</button>
             </div>
             <div id="status" class="status">Ready.</div>
             <div id="runtimeMeta" class="meta"></div>
@@ -641,17 +626,10 @@
           <section class="block">
             <h2>Generator</h2>
             <div class="control">
-              <label for="widthRange">Width</label>
+              <label for="sizeRange">Size (Square)</label>
               <div class="pair">
-                <input type="range" id="widthRange" min="6" max="18" value="11" />
-                <input type="number" id="widthNumber" min="6" max="18" value="11" />
-              </div>
-            </div>
-            <div class="control">
-              <label for="heightRange">Height</label>
-              <div class="pair">
-                <input type="range" id="heightRange" min="6" max="18" value="11" />
-                <input type="number" id="heightNumber" min="6" max="18" value="11" />
+                <input type="range" id="sizeRange" min="6" max="18" value="11" />
+                <input type="number" id="sizeNumber" min="6" max="18" value="11" />
               </div>
             </div>
             <div class="control">
@@ -683,9 +661,9 @@
               </div>
             </div>
             <div class="button-row triple">
-              <button id="generateBtn">Generate Level</button>
-              <button id="showSolutionBtn" class="secondary">Load Hidden Solver</button>
-              <button id="loadLevelBtn" class="secondary">Load Level</button>
+              <button id="generateBtn" title="Create a new random level using the current generator settings.">Generate Level</button>
+              <button id="showSolutionBtn" class="secondary" title="Load the generated hidden solver into the program editor.">Load Hidden Solver</button>
+              <button id="loadLevelBtn" class="secondary" title="Import a .level file from disk.">Load Level</button>
             </div>
             <input id="loadLevelInput" type="file" accept=".level,text/plain" hidden />
           </section>
@@ -707,10 +685,8 @@
       const NORTH_DIR = 0;
       const OP_CODES = ["F", "L", "R", "S", "J"];
 
-      const widthRange = document.getElementById("widthRange");
-      const widthNumber = document.getElementById("widthNumber");
-      const heightRange = document.getElementById("heightRange");
-      const heightNumber = document.getElementById("heightNumber");
+      const sizeRange = document.getElementById("sizeRange");
+      const sizeNumber = document.getElementById("sizeNumber");
       const densityRange = document.getElementById("densityRange");
       const densityNumber = document.getElementById("densityNumber");
       const solLenRange = document.getElementById("solLenRange");
@@ -788,8 +764,7 @@
 
       function saveGeneratorSettings() {
         const payload = {
-          width: parseInt(widthRange.value, 10),
-          height: parseInt(heightRange.value, 10),
+          size: parseInt(sizeRange.value, 10),
           density: parseInt(densityRange.value, 10),
           solverLength: parseInt(solLenRange.value, 10),
           programLimit: parseInt(progLimitRange.value, 10),
@@ -809,8 +784,8 @@
             return;
           }
           const parsed = JSON.parse(raw);
-          assignPairValue(widthRange, widthNumber, parsed.width);
-          assignPairValue(heightRange, heightNumber, parsed.height);
+          const parsedSize = parsed.size ?? parsed.width ?? parsed.height;
+          assignPairValue(sizeRange, sizeNumber, parsedSize);
           assignPairValue(densityRange, densityNumber, parsed.density);
           assignPairValue(solLenRange, solLenNumber, parsed.solverLength);
           assignPairValue(progLimitRange, progLimitNumber, parsed.programLimit);
@@ -899,6 +874,30 @@
         }
         const offset = Number.isFinite(inst.arg) ? inst.arg : 1;
         return `J${offset >= 0 ? "+" : ""}${offset}`;
+      }
+
+      function instructionTooltip(inst) {
+        if (!inst) {
+          return "Unknown instruction.";
+        }
+        if (inst.op === "F") {
+          return "F (Forward): move one cell forward; exiting the board wins.";
+        }
+        if (inst.op === "L") {
+          return "L (Left): rotate 90 degrees counter-clockwise.";
+        }
+        if (inst.op === "R") {
+          return "R (Right): rotate 90 degrees clockwise.";
+        }
+        if (inst.op === "S") {
+          return "S (Sense): if blocked ahead, execute next; otherwise skip next.";
+        }
+        if (inst.op === "J") {
+          const offset = Number.isFinite(inst.arg) ? inst.arg : 1;
+          const signed = offset >= 0 ? `+${offset}` : String(offset);
+          return `J${signed} (Jump): shift instruction pointer by ${signed}.`;
+        }
+        return `${inst.op}: instruction.`;
       }
 
       function programText(program) {
@@ -1153,6 +1152,7 @@
             token.type = "button";
             token.className = "program-token";
             token.dataset.op = inst.op;
+            token.title = instructionTooltip(inst);
             if (inst.op === "J") {
               const jumpOp = document.createElement("span");
               jumpOp.className = "jump-op";
@@ -1975,8 +1975,7 @@
         const blocked = blockCount(state.board);
         const densityPercent = Math.round((100 * blocked) / (state.width * state.height));
 
-        fitPairToValue(widthRange, widthNumber, state.width);
-        fitPairToValue(heightRange, heightNumber, state.height);
+        fitPairToValue(sizeRange, sizeNumber, Math.max(state.width, state.height));
         fitPairToValue(densityRange, densityNumber, densityPercent);
         fitPairToValue(progLimitRange, progLimitNumber, state.programLimit);
         fitPairToValue(maxStepsRange, maxStepsNumber, state.maxSteps);
@@ -2076,9 +2075,10 @@
         stopAutoRun();
         saveGeneratorSettings();
         setStatus("Generating...", "");
+        const size = parseInt(sizeRange.value, 10);
         const options = {
-          width: parseInt(widthRange.value, 10),
-          height: parseInt(heightRange.value, 10),
+          width: size,
+          height: size,
           density: parseInt(densityRange.value, 10) / 100,
           solutionLen: parseInt(solLenRange.value, 10),
           programLimit: parseInt(progLimitRange.value, 10),
@@ -2204,10 +2204,7 @@
 
       loadGeneratorSettings();
 
-      bindPair(widthRange, widthNumber, () => {
-        saveGeneratorSettings();
-      });
-      bindPair(heightRange, heightNumber, () => {
+      bindPair(sizeRange, sizeNumber, () => {
         saveGeneratorSettings();
       });
       bindPair(densityRange, densityNumber, () => {

@@ -265,6 +265,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--best-of",
+        type=int,
+        default=1,
+        help=(
+            "Generate this many valid candidates per level and keep the one with the "
+            "highest min_moves_to_exit (default: 1)."
+        ),
+    )
+    parser.add_argument(
         "--progressive-intensity",
         type=float,
         default=1.0,
@@ -285,6 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
 def build_solution_payload(
     generated: core.GeneratedLevel,
     level_seed: int,
+    best_of: int,
     progressive_difficulty: bool,
     progressive_intensity: float,
     progressive_max_size: int,
@@ -301,6 +311,7 @@ def build_solution_payload(
         "min_direction_types_to_exit": generated.min_direction_types_to_exit,
         "generator": {
             "seed": level_seed,
+            "best_of": best_of,
             "attempts_used": generated.attempts_used,
             "progressive_difficulty": progressive_difficulty,
             "progressive_intensity": progressive_intensity,
@@ -352,6 +363,12 @@ def main(argv: list[str]) -> int:
     if args.level_seed_retries < 0:
         print("Error: --level-seed-retries must be >= 0.", file=sys.stderr)
         return 2
+    if args.best_of < 1:
+        print("Error: --best-of must be >= 1.", file=sys.stderr)
+        return 2
+    if args.level_seed_retries > 0 and args.best_of > args.level_seed_retries:
+        print("Error: --best-of cannot exceed --level-seed-retries when retries are finite.", file=sys.stderr)
+        return 2
     if args.progressive_difficulty and args.progressive_max_size < base_size:
         print(
             "Error: --progressive-max-size cannot be smaller than the base --size/--width "
@@ -378,13 +395,12 @@ def main(argv: list[str]) -> int:
         f"progressive={'on' if args.progressive_difficulty else 'off'}, "
         f"intensity={args.progressive_intensity}, progressive_max_size={args.progressive_max_size}, "
         f"max_straight_run={args.max_straight_run}, min_direction_types_to_exit={args.min_direction_types_to_exit}, "
+        f"best_of={args.best_of}, "
         f"square_size_base={base_size})"
     )
 
     for level_number in range(args.start_level, args.max_level + 1):
-        generated = None
-        options = None
-        level_seed = None
+        candidate_pool: list[tuple[core.GeneratedLevel, core.GenerateOptions, int]] = []
         last_error = None
         seed_tries_used = 0
         progress_width = 0
@@ -400,10 +416,14 @@ def main(argv: list[str]) -> int:
                 return
             attempt_text = "-" if attempt is None else str(attempt)
             max_attempts_text = "-" if max_attempts is None else str(max_attempts)
+            best_min_moves = max((entry[0].min_moves_to_exit for entry in candidate_pool), default=None)
+            best_min_moves_text = "-" if best_min_moves is None else str(best_min_moves)
             progress_width = update_progress_line(
                 (
                     f"Level {level_number}/{args.max_level}: "
                     f"seed_tries={seed_tries_used}/{max_seed_tries_text}, "
+                    f"best_of={len(candidate_pool)}/{args.best_of}, "
+                    f"best_min_moves={best_min_moves_text}, "
                     f"attempts={attempt_text}/{max_attempts_text}, "
                     f"status={status}"
                 ),
@@ -411,7 +431,9 @@ def main(argv: list[str]) -> int:
                 show_live_progress,
             )
 
-        while args.level_seed_retries == 0 or seed_tries_used < args.level_seed_retries:
+        while len(candidate_pool) < args.best_of and (
+            args.level_seed_retries == 0 or seed_tries_used < args.level_seed_retries
+        ):
             seed_tries_used += 1
             candidate_seed = batch_rng.randrange(0, 2**63)
             level_tuning_rng = random.Random(candidate_seed ^ 0x9E3779B97F4A7C15)
@@ -437,19 +459,23 @@ def main(argv: list[str]) -> int:
                 last_error = exc
                 progress_status("seed_failed", candidate_options.max_attempts, candidate_options.max_attempts)
                 continue
-            generated = candidate_generated
-            options = candidate_options
-            level_seed = candidate_seed
-            break
+            candidate_pool.append((candidate_generated, candidate_options, candidate_seed))
+            progress_status("candidate_ok", candidate_generated.attempts_used, candidate_options.max_attempts)
 
-        if generated is None or options is None or level_seed is None:
+        if len(candidate_pool) < args.best_of:
             clear_progress_line(progress_width, show_live_progress)
             detail = f"{last_error}" if last_error is not None else "unknown error"
             print(
-                f"Error generating level {level_number} after {args.level_seed_retries} seed retries: {detail}",
+                f"Error generating level {level_number}: found {len(candidate_pool)}/{args.best_of} valid "
+                f"candidates after {seed_tries_used} seed tries: {detail}",
                 file=sys.stderr,
             )
             return 2
+
+        generated, options, level_seed = max(
+            candidate_pool,
+            key=lambda entry: entry[0].min_moves_to_exit,
+        )
 
         clear_progress_line(progress_width, show_live_progress)
         level_path = args.out_dir / f"{level_number}.level"
@@ -457,6 +483,7 @@ def main(argv: list[str]) -> int:
         payload = build_solution_payload(
             generated=generated,
             level_seed=level_seed,
+            best_of=args.best_of,
             progressive_difficulty=args.progressive_difficulty,
             progressive_intensity=args.progressive_intensity,
             progressive_max_size=args.progressive_max_size,
@@ -472,7 +499,8 @@ def main(argv: list[str]) -> int:
             f"Level {level_number}: ok "
             f"(size={options.width}x{options.height}, density={options.density * 100.0:.1f}%, "
             f"target_sol={options.solution_length}, plim={options.program_limit}, "
-            f"elim={options.execution_limit}, seed_tries={seed_tries_used}, attempts={generated.attempts_used}, "
+            f"elim={options.execution_limit}, seed_tries={seed_tries_used}, best_of={len(candidate_pool)}/{args.best_of}, "
+            f"attempts={generated.attempts_used}, "
             f"solution_steps={generated.solution_steps}, min_moves_to_exit={generated.min_moves_to_exit}, "
             f"min_direction_types_to_exit={generated.min_direction_types_to_exit})"
         )

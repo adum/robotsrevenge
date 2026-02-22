@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="128" height="128">
+    <defs>
+        <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#78909C" />
+            <stop offset="100%" stop-color="#546E7A" />
+        </linearGradient>
+        <linearGradient id="headGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#B0BEC5" />
+            <stop offset="100%" stop-color="#90A4AE" />
+        </linearGradient>
+    </defs>
+
+    <rect x="8" y="8" width="12" height="48" rx="2" fill="#263238" />
+    <line x1="14" y1="10" x2="14" y2="54" stroke="#455A64" stroke-width="8" stroke-dasharray="4,4">
+        <animate attributeName="stroke-dashoffset" from="0" to="-8" dur="0.6s" repeatCount="indefinite" />
+    </line>
+
+    <rect x="44" y="8" width="12" height="48" rx="2" fill="#263238" />
+    <line x1="50" y1="10" x2="50" y2="54" stroke="#455A64" stroke-width="8" stroke-dasharray="4,4">
+        <animate attributeName="stroke-dashoffset" from="0" to="-8" dur="0.6s" repeatCount="indefinite" />
+    </line>
+
+    <rect x="16" y="16" width="32" height="32" rx="6" fill="url(#bodyGrad)" stroke="#37474F" stroke-width="2" />
+
+    <rect x="22" y="40" width="20" height="6" rx="1" fill="#37474F" />
+    <line x1="24" y1="42" x2="40" y2="42" stroke="#263238" stroke-width="1" />
+    <line x1="24" y1="44" x2="40" y2="44" stroke="#263238" stroke-width="1" />
+
+    <circle cx="32" cy="34" r="5" fill="#263238" />
+    <circle cx="32" cy="34" r="3" fill="#00BCD4">
+        <animate attributeName="opacity" values="0.4;1;0.4" dur="1.5s" repeatCount="indefinite" />
+        <animate attributeName="r" values="3;4;3" dur="1.5s" repeatCount="indefinite" />
+    </circle>
+
+    <circle cx="32" cy="24" r="10" fill="url(#headGrad)" stroke="#37474F" stroke-width="2" />
+
+    <rect x="26" y="22" width="12" height="4" rx="2" fill="#212121" />
+    <circle cx="28" cy="24" r="1.5" fill="#FF1744">
+        <animate attributeName="cx" values="28;36;28" dur="2s" repeatCount="indefinite" />
+    </circle>
+
+    <rect x="30" y="8" width="4" height="8" rx="1" fill="#546E7A" stroke="#37474F" stroke-width="1.5" />
+    <rect x="29" y="4" width="6" height="4" rx="1" fill="#37474F" />
+
+</svg>
