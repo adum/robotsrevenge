@@ -15,3 +15,4 @@ env/
 # Generated puzzle artifacts (keep directories local, ignore contents)
 levels/**
 solutions/**
+dist/

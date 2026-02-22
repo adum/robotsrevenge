@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Robot's Revenge</title>
+    <link rel="icon" type="image/x-icon" href="./assets/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="./assets/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/favicon-180.png" />
+    <link rel="stylesheet" href="./index.css" />
+    <link rel="stylesheet" href="./play.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <div class="brand">
+        <img
+          class="brand-icon"
+          src="./assets/icon_ui_64.png"
+          alt="Robot's Revenge icon"
+          width="32"
+          height="32"
+        />
+        <div class="brand-title-wrap">
+          <div class="brand-name">Robot's Revenge</div>
+          <div id="currentLevelTop" class="brand-level">Level 1</div>
+        </div>
+      </div>
+
+      <section class="panel program-panel">
+        <section class="block program-block">
+          <div class="program-line-top">
+            <h2>Program</h2>
+            <div id="programStrip" class="program-strip" aria-label="Program tokens"></div>
+          </div>
+          <div class="program-line-bottom">
+            <div class="button-row five program-buttons">
+              <button id="addFBtn" class="secondary" title="Add Forward (F): move one cell forward; exits if stepping off the board.">+ ↑</button>
+              <button id="addLBtn" class="secondary turn-btn" title="Add Left (L): rotate 90 degrees counter-clockwise.">+ ↺</button>
+              <button id="addRBtn" class="secondary turn-btn" title="Add Right (R): rotate 90 degrees clockwise.">+ ↻</button>
+              <button id="addSBtn" class="secondary" title="Add Sense (S): if the cell ahead is blocked, run next instruction; otherwise skip one.">+ S</button>
+              <button id="addJBtn" class="secondary" title="Add Jump (J±n): move the instruction pointer by an offset.">+ J</button>
+            </div>
+            <div class="program-edit">
+              <div id="selectedInfo" class="selected-info">Selected: none</div>
+              <button id="deleteSelectedBtn" class="secondary" title="Delete the selected instruction.">Delete</button>
+            </div>
+            <div id="programSummary" class="summary program-summary">Length 0 / 14</div>
+            <div class="button-row triple program-actions">
+              <button id="clearProgramBtn" class="secondary" title="Remove all instructions from the editor.">Clear Program</button>
+              <button id="copyProgramBtn" class="secondary" title="Copy the current program text to the clipboard.">Copy</button>
+              <button id="pasteProgramBtn" class="secondary" title="Paste program text from the clipboard into the editor.">Paste</button>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <div class="main-row">
+        <main id="arena" class="arena">
+          <div id="boardWrap" class="board-wrap">
+            <div id="execCountdown" class="exec-countdown" aria-live="polite"></div>
+            <div id="board" class="board" aria-label="Puzzle board"></div>
+          </div>
+        </main>
+
+        <aside class="panel">
+          <section class="block">
+            <h2>Campaign</h2>
+            <div id="campaignMeta" class="meta"></div>
+            <div class="button-row triple">
+              <button id="prevLevelBtn" class="secondary" title="Load previous unlocked level.">Prev Level</button>
+              <button id="nextLevelBtn" class="secondary" title="Load next unlocked level.">Next Level</button>
+              <button id="submitSolutionBtn" title="Submit current program for server verification and unlock progression.">Submit Solution</button>
+            </div>
+            <div class="control">
+              <label for="levelJumpRange">Select Unlocked Level</label>
+              <div class="pair">
+                <input type="range" id="levelJumpRange" min="1" max="1" value="1" />
+                <input type="number" id="levelJumpNumber" min="1" max="1" value="1" />
+              </div>
+            </div>
+            <button id="loadSelectedLevelBtn" class="secondary" title="Load the selected unlocked level.">Load Selected Level</button>
+            <div id="playerMeta" class="meta"></div>
+          </section>
+
+          <section class="block">
+            <h2>Run Controls</h2>
+            <div class="control">
+              <label for="speedRange">Auto Run Delay (ms)</label>
+              <div class="pair">
+                <input type="range" id="speedRange" min="50" max="550" value="140" />
+                <input type="number" id="speedNumber" min="50" max="550" value="140" />
+              </div>
+            </div>
+            <div class="button-row">
+              <button id="stepBtn" class="secondary" title="Execute one instruction.">Step</button>
+              <button id="runBtn" title="Run continuously using the selected delay until stop, crash, or escape.">Auto Run</button>
+            </div>
+            <div class="button-row">
+              <button id="resetBtn" class="secondary" title="Reset robot position, facing, and execution state.">Reset Robot</button>
+              <button id="clearTrailBtn" class="secondary" title="Clear only the visual trail without resetting execution state.">Clear Trail</button>
+            </div>
+            <div id="status" class="status">Loading level 1...</div>
+            <div id="runtimeMeta" class="meta"></div>
+            <div id="levelMeta" class="meta"></div>
+          </section>
+        </aside>
+      </div>
+    </div>
+
+    <script src="./play.js"></script>
+  </body>
+</html>

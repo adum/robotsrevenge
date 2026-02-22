@@ -1,0 +1,32 @@
+.brand-title-wrap {
+  display: grid;
+  gap: 2px;
+}
+
+.brand-level {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(20, 33, 29, 0.35);
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#campaignMeta,
+#playerMeta {
+  font-family: "JetBrains Mono", monospace;
+}
+
+#loadSelectedLevelBtn {
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .brand-level {
+    font-size: 11px;
+  }
+}
