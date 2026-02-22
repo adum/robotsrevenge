@@ -8,6 +8,7 @@ import re
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 from urllib.parse import parse_qsl
 
 MAX_PROGRAM_LIMIT = 128
@@ -63,6 +64,7 @@ class GenerateOptions:
     execution_limit: int = 420
     max_attempts: int = 650
     max_straight_run: int = 10
+    min_direction_types_to_exit: int = 3
 
 
 @dataclass
@@ -74,6 +76,7 @@ class GeneratedLevel:
     solution_text: str
     solution_steps: int
     min_moves_to_exit: int
+    min_direction_types_to_exit: int
     attempts_used: int
 
 
@@ -758,6 +761,62 @@ def minimum_moves_to_exit(level: Level) -> int | None:
     return None
 
 
+def _can_escape_with_direction_mask(level: Level, direction_mask: int) -> bool:
+    width = level.width
+    height = level.height
+    start_x = level.start_x
+    start_y = level.start_y
+
+    if not in_bounds(start_x, start_y, width, height):
+        return False
+    if level.board[start_y][start_x]:
+        return False
+
+    visited = [[False for _ in range(width)] for _ in range(height)]
+    queue: deque[tuple[int, int]] = deque()
+    queue.append((start_x, start_y))
+    visited[start_y][start_x] = True
+
+    while queue:
+        x, y = queue.popleft()
+        for dir_index, (dx, dy) in enumerate(DIR_DELTAS):
+            if (direction_mask & (1 << dir_index)) == 0:
+                continue
+
+            nx = x + dx
+            ny = y + dy
+            if not in_bounds(nx, ny, width, height):
+                return True
+            if visited[ny][nx] or level.board[ny][nx]:
+                continue
+            visited[ny][nx] = True
+            queue.append((nx, ny))
+
+    return False
+
+
+def minimum_distinct_directions_to_exit(level: Level) -> int | None:
+    """
+    Smallest number of distinct movement directions needed to leave the board.
+    Counts among N/E/S/W only and ignores turning/sensing/jumps.
+    """
+    width = level.width
+    height = level.height
+    start_x = level.start_x
+    start_y = level.start_y
+    if not in_bounds(start_x, start_y, width, height):
+        return None
+    if level.board[start_y][start_x]:
+        return None
+
+    masks = list(range(1, 1 << len(DIR_DELTAS)))
+    masks.sort(key=lambda mask: (mask.bit_count(), mask))
+    for direction_mask in masks:
+        if _can_escape_with_direction_mask(level, direction_mask):
+            return direction_mask.bit_count()
+    return None
+
+
 def has_meaningless_jump_instruction(program: list[Instruction]) -> bool:
     """
     Returns True when program contains jumps that do not change control flow:
@@ -1066,6 +1125,12 @@ def _try_generate_level(
     if has_straight_run_at_least(level, hidden_solution, options.max_straight_run, options.execution_limit):
         return None
 
+    min_direction_types_to_exit = minimum_distinct_directions_to_exit(level)
+    if min_direction_types_to_exit is None:
+        return None
+    if min_direction_types_to_exit < options.min_direction_types_to_exit:
+        return None
+
     blocked = block_count(board)
     ratio = blocked / (options.width * options.height)
     if ratio < 0.08 or ratio > 0.70:
@@ -1080,6 +1145,7 @@ def generate_level(
     level_id: str | int | None,
     options: GenerateOptions,
     rng: random.Random | None = None,
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> GeneratedLevel:
     if options.width < 2 or options.height < 2:
         raise ValueError("width and height must be >= 2")
@@ -1099,10 +1165,18 @@ def generate_level(
         raise ValueError("max_attempts must be >= 1")
     if options.max_straight_run < 0:
         raise ValueError("max_straight_run must be >= 0")
+    if options.min_direction_types_to_exit < 1 or options.min_direction_types_to_exit > 4:
+        raise ValueError("min_direction_types_to_exit must be between 1 and 4")
 
     random_source = rng or random.Random()
     for attempt in range(1, options.max_attempts + 1):
         generated = _try_generate_level(level_id, options, random_source)
+        if progress_callback is not None:
+            progress_callback(
+                attempt,
+                options.max_attempts,
+                "accepted" if generated is not None else "rejected",
+            )
         if generated is None:
             continue
 
@@ -1127,6 +1201,9 @@ def generate_level(
         min_moves_to_exit = minimum_moves_to_exit(level)
         if min_moves_to_exit is None:
             raise RuntimeError("Generated level has no movement-only path to exit.")
+        min_direction_types_to_exit = minimum_distinct_directions_to_exit(level)
+        if min_direction_types_to_exit is None:
+            raise RuntimeError("Generated level has no direction-subset movement path to exit.")
         return GeneratedLevel(
             level=level,
             level_text=level_text,
@@ -1135,6 +1212,7 @@ def generate_level(
             solution_text=solution_text,
             solution_steps=solution_steps,
             min_moves_to_exit=min_moves_to_exit,
+            min_direction_types_to_exit=min_direction_types_to_exit,
             attempts_used=attempt,
         )
 

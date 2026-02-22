@@ -60,6 +60,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--min-direction-types-to-exit",
+        type=int,
+        default=3,
+        help=(
+            "Minimum distinct movement directions (N/E/S/W) required for any movement-only "
+            "escape path (1-4, default: 3)."
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=None,
@@ -103,6 +112,7 @@ def build_solution_payload(
         "solution_program": generated.solution_text,
         "solution_steps": generated.solution_steps,
         "min_moves_to_exit": generated.min_moves_to_exit,
+        "min_direction_types_to_exit": generated.min_direction_types_to_exit,
         "generator": {
             "seed": level_seed,
             "attempts_used": generated.attempts_used,
@@ -114,6 +124,7 @@ def build_solution_payload(
             "execution_limit": options.execution_limit,
             "max_attempts": options.max_attempts,
             "max_straight_run": options.max_straight_run,
+            "min_direction_types_to_exit_required": options.min_direction_types_to_exit,
         },
         "created_at": timestamp_now_utc(),
     }
@@ -136,6 +147,7 @@ def main(argv: list[str]) -> int:
         execution_limit=args.execution_limit,
         max_attempts=args.max_attempts,
         max_straight_run=args.max_straight_run,
+        min_direction_types_to_exit=args.min_direction_types_to_exit,
     )
 
     try:

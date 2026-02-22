@@ -24,6 +24,24 @@ def clamp_float(value: float, min_value: float, max_value: float) -> float:
     return max(min_value, min(max_value, value))
 
 
+def update_progress_line(line: str, previous_width: int, enabled: bool = True) -> int:
+    if not enabled:
+        return 0
+    padded = line
+    if previous_width > len(line):
+        padded += " " * (previous_width - len(line))
+    sys.stdout.write("\r" + padded)
+    sys.stdout.flush()
+    return len(line)
+
+
+def clear_progress_line(previous_width: int, enabled: bool = True) -> None:
+    if not enabled or previous_width <= 0:
+        return
+    sys.stdout.write("\r" + (" " * previous_width) + "\r")
+    sys.stdout.flush()
+
+
 def choose_level_options(
     level_number: int,
     start_level: int,
@@ -46,6 +64,7 @@ def choose_level_options(
             execution_limit=args.execution_limit,
             max_attempts=args.max_attempts,
             max_straight_run=args.max_straight_run,
+            min_direction_types_to_exit=args.min_direction_types_to_exit,
         )
 
     speed_scale = 1.0 + 0.5 * (intensity - 1.0)
@@ -137,6 +156,7 @@ def choose_level_options(
         execution_limit=execution_limit,
         max_attempts=max_attempts,
         max_straight_run=args.max_straight_run,
+        min_direction_types_to_exit=args.min_direction_types_to_exit,
     )
 
 
@@ -213,6 +233,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--min-direction-types-to-exit",
+        type=int,
+        default=3,
+        help=(
+            "Minimum distinct movement directions (N/E/S/W) required for any movement-only "
+            "escape path (1-4, default: 3)."
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=None,
@@ -269,6 +298,7 @@ def build_solution_payload(
         "solution_program": generated.solution_text,
         "solution_steps": generated.solution_steps,
         "min_moves_to_exit": generated.min_moves_to_exit,
+        "min_direction_types_to_exit": generated.min_direction_types_to_exit,
         "generator": {
             "seed": level_seed,
             "attempts_used": generated.attempts_used,
@@ -283,6 +313,7 @@ def build_solution_payload(
             "execution_limit": options.execution_limit,
             "max_attempts": options.max_attempts,
             "max_straight_run": options.max_straight_run,
+            "min_direction_types_to_exit_required": options.min_direction_types_to_exit,
         },
         "created_at": timestamp_now_utc(),
     }
@@ -315,6 +346,9 @@ def main(argv: list[str]) -> int:
     if args.max_straight_run < 0:
         print("Error: --max-straight-run must be >= 0.", file=sys.stderr)
         return 2
+    if args.min_direction_types_to_exit < 1 or args.min_direction_types_to_exit > 4:
+        print("Error: --min-direction-types-to-exit must be between 1 and 4.", file=sys.stderr)
+        return 2
     if args.level_seed_retries < 0:
         print("Error: --level-seed-retries must be >= 0.", file=sys.stderr)
         return 2
@@ -337,12 +371,14 @@ def main(argv: list[str]) -> int:
     args.solution_dir.mkdir(parents=True, exist_ok=True)
 
     batch_rng = random.Random(args.seed)
+    show_live_progress = sys.stdout.isatty()
     print(
         f"Generating levels {args.start_level}..{args.max_level} "
         f"(seed={args.seed}, out={args.out_dir}, solutions={args.solution_dir}, "
         f"progressive={'on' if args.progressive_difficulty else 'off'}, "
         f"intensity={args.progressive_intensity}, progressive_max_size={args.progressive_max_size}, "
-        f"max_straight_run={args.max_straight_run}, square_size_base={base_size})"
+        f"max_straight_run={args.max_straight_run}, min_direction_types_to_exit={args.min_direction_types_to_exit}, "
+        f"square_size_base={base_size})"
     )
 
     for level_number in range(args.start_level, args.max_level + 1):
@@ -351,6 +387,29 @@ def main(argv: list[str]) -> int:
         level_seed = None
         last_error = None
         seed_tries_used = 0
+        progress_width = 0
+        max_seed_tries_text = "inf" if args.level_seed_retries == 0 else str(args.level_seed_retries)
+
+        def progress_status(
+            status: str,
+            attempt: int | None = None,
+            max_attempts: int | None = None,
+        ) -> None:
+            nonlocal progress_width
+            if not show_live_progress:
+                return
+            attempt_text = "-" if attempt is None else str(attempt)
+            max_attempts_text = "-" if max_attempts is None else str(max_attempts)
+            progress_width = update_progress_line(
+                (
+                    f"Level {level_number}/{args.max_level}: "
+                    f"seed_tries={seed_tries_used}/{max_seed_tries_text}, "
+                    f"attempts={attempt_text}/{max_attempts_text}, "
+                    f"status={status}"
+                ),
+                progress_width,
+                show_live_progress,
+            )
 
         while args.level_seed_retries == 0 or seed_tries_used < args.level_seed_retries:
             seed_tries_used += 1
@@ -364,12 +423,19 @@ def main(argv: list[str]) -> int:
                 args=args,
                 level_rng=level_tuning_rng,
             )
+            progress_status("searching", 0, candidate_options.max_attempts)
             try:
                 candidate_generated = core.generate_level(
-                    level_number, candidate_options, rng=random.Random(candidate_seed)
+                    level_number,
+                    candidate_options,
+                    rng=random.Random(candidate_seed),
+                    progress_callback=lambda attempt, max_attempts, status: progress_status(
+                        status, attempt, max_attempts
+                    ),
                 )
             except (ValueError, RuntimeError) as exc:
                 last_error = exc
+                progress_status("seed_failed", candidate_options.max_attempts, candidate_options.max_attempts)
                 continue
             generated = candidate_generated
             options = candidate_options
@@ -377,6 +443,7 @@ def main(argv: list[str]) -> int:
             break
 
         if generated is None or options is None or level_seed is None:
+            clear_progress_line(progress_width, show_live_progress)
             detail = f"{last_error}" if last_error is not None else "unknown error"
             print(
                 f"Error generating level {level_number} after {args.level_seed_retries} seed retries: {detail}",
@@ -384,6 +451,7 @@ def main(argv: list[str]) -> int:
             )
             return 2
 
+        clear_progress_line(progress_width, show_live_progress)
         level_path = args.out_dir / f"{level_number}.level"
         solution_path = args.solution_dir / f"{level_number}.solution.json"
         payload = build_solution_payload(
@@ -405,7 +473,8 @@ def main(argv: list[str]) -> int:
             f"(size={options.width}x{options.height}, density={options.density * 100.0:.1f}%, "
             f"target_sol={options.solution_length}, plim={options.program_limit}, "
             f"elim={options.execution_limit}, seed_tries={seed_tries_used}, attempts={generated.attempts_used}, "
-            f"solution_steps={generated.solution_steps}, min_moves_to_exit={generated.min_moves_to_exit})"
+            f"solution_steps={generated.solution_steps}, min_moves_to_exit={generated.min_moves_to_exit}, "
+            f"min_direction_types_to_exit={generated.min_direction_types_to_exit})"
         )
 
     return 0

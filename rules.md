@@ -58,6 +58,7 @@
   - `solution_program`: canonical instruction text (e.g. `F S J+2 R J-1`).
   - `solution_steps`: expected steps to escape.
   - `min_moves_to_exit`: shortest movement-only path length to leave the board from start.
+  - `min_direction_types_to_exit`: fewest distinct movement directions (N/E/S/W) needed to exit.
   - `generator`: seed/settings metadata.
 
 ## Tooling
@@ -65,6 +66,8 @@
   - `python3 generate_level.py 12 --level-out levels/12.level --solution-out solutions/12.solution.json`
 - By default, generators reject candidate levels whose hidden solution contains a straight run of `10` or more forward moves in one direction.
   - Tune or disable with `--max-straight-run N` (`0` disables).
+- By default, generators require movement-only escape paths to use at least `3` distinct directions.
+  - Tune with `--min-direction-types-to-exit N` (`1..4`, default: `3`).
 - Generate a range:
   - `python3 generate_levels.py 50 --out-dir levels --solution-dir solutions`
   - `python3 generate_levels.py 50 --progressive-difficulty --size 9 --out-dir levels --solution-dir solutions`
