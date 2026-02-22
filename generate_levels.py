@@ -130,38 +130,53 @@ def choose_level_options(
     size = max(size_floor, size)
     size = clamp_int(size, max(4, base_size), size_target_max)
 
-    # Base target length scales with board size, then we add progressive variation.
-    solution_per_size = base_solution_reference / max(1, base_size)
-    baseline_solution_length = clamp_int(
-        int(round(size * solution_per_size)),
-        3,
-        core.MAX_PROGRAM_LIMIT - 1,
-    )
+    if args.progressive_target_sol_mode == "half-size":
+        # Alternative mode: keep target solution length centered around half board size.
+        baseline_solution_length = clamp_int(
+            int(round(size * 0.5)),
+            3,
+            core.MAX_PROGRAM_LIMIT - 1,
+        )
+        wave = (0.05 + 0.015 * (wave_scale - 1.0)) * size * math.sin(level_number * 0.73 + 0.4)
+        noise = level_rng.uniform(-0.08 * size, 0.08 * size)
+        solution_length = clamp_int(
+            int(round(baseline_solution_length + wave + noise)),
+            3,
+            core.MAX_PROGRAM_LIMIT - 1,
+        )
+    else:
+        # Legacy progressive target: base size-scaling plus progressive variation.
+        solution_per_size = base_solution_reference / max(1, base_size)
+        baseline_solution_length = clamp_int(
+            int(round(size * solution_per_size)),
+            3,
+            core.MAX_PROGRAM_LIMIT - 1,
+        )
 
-    # Mostly scale difficulty via solution/program length.
-    base_solution_delta = max(4, int(round(span * 0.14)))
-    intensity_scale = 1.0 + 0.45 * (math.sqrt(intensity) - 1.0)
-    size_bonus = max(
-        0,
-        int(round((size - base_size) * (0.15 + 0.03 * (intensity - 1.0)))),
-    )
-    scaled_solution_delta = max(1, int(round(base_solution_delta * intensity_scale + size_bonus)))
-    size_delta_cap = max(6, int(round(size * (0.22 + 0.02 * math.sqrt(intensity)))))
-    scaled_solution_delta = min(scaled_solution_delta, size_delta_cap)
-    solution_target_max = min(core.MAX_PROGRAM_LIMIT - 1, baseline_solution_length + scaled_solution_delta)
-    solution_trend = baseline_solution_length + (solution_target_max - baseline_solution_length) * effective_progress
-    solution_wave_raw = 1.1 * math.sin(level_number * 0.73) + 0.9 * math.sin(level_number * 0.21 + 0.4)
-    solution_wave_anchor = 1.1 * math.sin(start_level * 0.73) + 0.9 * math.sin(start_level * 0.21 + 0.4)
-    solution_wave = wave_scale * (solution_wave_raw - solution_wave_anchor)
-    solution_noise = level_rng.uniform(-0.7, 0.7) * wave_scale
-    solution_length = int(round(solution_trend + solution_wave + solution_noise))
-    solution_floor = baseline_solution_length + int(
-        (solution_target_max - baseline_solution_length)
-        * effective_progress
-        * clamp_float(0.55 + 0.05 * intensity, 0.45, 0.9)
-    )
-    solution_length = max(solution_floor, solution_length)
-    solution_length = clamp_int(solution_length, 3, core.MAX_PROGRAM_LIMIT - 1)
+        # Mostly scale difficulty via solution/program length.
+        base_solution_delta = max(4, int(round(span * 0.14)))
+        intensity_scale = 1.0 + 0.45 * (math.sqrt(intensity) - 1.0)
+        size_bonus = max(
+            0,
+            int(round((size - base_size) * (0.15 + 0.03 * (intensity - 1.0)))),
+        )
+        scaled_solution_delta = max(1, int(round(base_solution_delta * intensity_scale + size_bonus)))
+        size_delta_cap = max(6, int(round(size * (0.22 + 0.02 * math.sqrt(intensity)))))
+        scaled_solution_delta = min(scaled_solution_delta, size_delta_cap)
+        solution_target_max = min(core.MAX_PROGRAM_LIMIT - 1, baseline_solution_length + scaled_solution_delta)
+        solution_trend = baseline_solution_length + (solution_target_max - baseline_solution_length) * effective_progress
+        solution_wave_raw = 1.1 * math.sin(level_number * 0.73) + 0.9 * math.sin(level_number * 0.21 + 0.4)
+        solution_wave_anchor = 1.1 * math.sin(start_level * 0.73) + 0.9 * math.sin(start_level * 0.21 + 0.4)
+        solution_wave = wave_scale * (solution_wave_raw - solution_wave_anchor)
+        solution_noise = level_rng.uniform(-0.7, 0.7) * wave_scale
+        solution_length = int(round(solution_trend + solution_wave + solution_noise))
+        solution_floor = baseline_solution_length + int(
+            (solution_target_max - baseline_solution_length)
+            * effective_progress
+            * clamp_float(0.55 + 0.05 * intensity, 0.45, 0.9)
+        )
+        solution_length = max(solution_floor, solution_length)
+        solution_length = clamp_int(solution_length, 3, core.MAX_PROGRAM_LIMIT - 1)
 
     # Vary slack so some levels are tight and others have exploration room.
     slack_center = 4.0 - 1.5 * effective_progress - 0.35 * (intensity - 1.0)
@@ -364,6 +379,34 @@ def build_parser() -> argparse.ArgumentParser:
         default=128,
         help="Maximum board size used by progressive mode (default: 128).",
     )
+    parser.add_argument(
+        "--progressive-target-sol-mode",
+        choices=("legacy", "half-size"),
+        default="half-size",
+        help=(
+            "How progressive mode computes target solution length: "
+            "'legacy' (existing curve) or 'half-size' (about half board size + noise, default)."
+        ),
+    )
+    parser.add_argument(
+        "--progressive-reference-start-level",
+        type=int,
+        default=None,
+        help=(
+            "Optional lower bound used for progressive tuning math. "
+            "Use 1 when regenerating a late slice so it matches a full 1..N run "
+            "(default: --start-level)."
+        ),
+    )
+    parser.add_argument(
+        "--progressive-reference-max-level",
+        type=int,
+        default=None,
+        help=(
+            "Optional upper bound used for progressive tuning math "
+            "(default: --max-level)."
+        ),
+    )
     return parser
 
 
@@ -376,6 +419,9 @@ def build_solution_payload(
     progressive_difficulty: bool,
     progressive_intensity: float,
     progressive_max_size: int,
+    progressive_target_sol_mode: str,
+    progressive_reference_start_level: int,
+    progressive_reference_max_level: int,
     options: core.GenerateOptions,
 ) -> dict[str, object]:
     return {
@@ -396,6 +442,9 @@ def build_solution_payload(
             "progressive_difficulty": progressive_difficulty,
             "progressive_intensity": progressive_intensity,
             "progressive_max_size": progressive_max_size,
+            "progressive_target_sol_mode": progressive_target_sol_mode,
+            "progressive_reference_start_level": progressive_reference_start_level,
+            "progressive_reference_max_level": progressive_reference_max_level,
             "width": options.width,
             "height": options.height,
             "density_percent": round(options.density * 100.0, 2),
@@ -439,6 +488,16 @@ def main(argv: list[str]) -> int:
     if args.max_level < args.start_level:
         print("Error: max_level must be >= --start-level", file=sys.stderr)
         return 2
+    progressive_reference_start_level = (
+        args.progressive_reference_start_level
+        if args.progressive_reference_start_level is not None
+        else args.start_level
+    )
+    progressive_reference_max_level = (
+        args.progressive_reference_max_level
+        if args.progressive_reference_max_level is not None
+        else args.max_level
+    )
 
     if args.seed is None:
         args.seed = random.SystemRandom().randrange(0, 2**63)
@@ -452,6 +511,22 @@ def main(argv: list[str]) -> int:
         return 2
     if args.progressive_max_size < 2:
         print("Error: --progressive-max-size must be >= 2.", file=sys.stderr)
+        return 2
+    if progressive_reference_start_level < 1:
+        print("Error: --progressive-reference-start-level must be >= 1.", file=sys.stderr)
+        return 2
+    if progressive_reference_max_level < progressive_reference_start_level:
+        print(
+            "Error: --progressive-reference-max-level must be >= --progressive-reference-start-level.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.start_level < progressive_reference_start_level or args.max_level > progressive_reference_max_level:
+        print(
+            "Error: generation range must be inside progressive reference range "
+            f"({progressive_reference_start_level}..{progressive_reference_max_level}).",
+            file=sys.stderr,
+        )
         return 2
     if args.max_straight_run < 0:
         print("Error: --max-straight-run must be >= 0.", file=sys.stderr)
@@ -492,7 +567,9 @@ def main(argv: list[str]) -> int:
         f"Generating levels {args.start_level}..{args.max_level} "
         f"(seed={args.seed}, out={args.out_dir}, solutions={args.solution_dir}, "
         f"progressive={'on' if args.progressive_difficulty else 'off'}, "
+        f"progressive_target_sol_mode={args.progressive_target_sol_mode}, "
         f"intensity={args.progressive_intensity}, progressive_max_size={args.progressive_max_size}, "
+        f"progressive_reference={progressive_reference_start_level}..{progressive_reference_max_level}, "
         f"max_straight_run={args.max_straight_run}, min_direction_types_to_exit={args.min_direction_types_to_exit}, "
         f"best_of={args.best_of}, reject_codes={'on' if args.show_reject_codes else 'off'}, "
         f"seal_unreachable={'on' if args.seal_unreachable else 'off'}, "
@@ -552,8 +629,8 @@ def main(argv: list[str]) -> int:
             level_tuning_rng = random.Random(candidate_seed ^ 0x9E3779B97F4A7C15)
             candidate_options = choose_level_options(
                 level_number=level_number,
-                start_level=args.start_level,
-                max_level=args.max_level,
+                start_level=progressive_reference_start_level,
+                max_level=progressive_reference_max_level,
                 base_size=base_size,
                 args=args,
                 level_rng=level_tuning_rng,
@@ -617,6 +694,9 @@ def main(argv: list[str]) -> int:
             progressive_difficulty=args.progressive_difficulty,
             progressive_intensity=args.progressive_intensity,
             progressive_max_size=args.progressive_max_size,
+            progressive_target_sol_mode=args.progressive_target_sol_mode,
+            progressive_reference_start_level=progressive_reference_start_level,
+            progressive_reference_max_level=progressive_reference_max_level,
             options=options,
         )
 
