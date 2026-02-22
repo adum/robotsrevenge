@@ -1053,12 +1053,12 @@ def _try_generate_level(
     level_id: str | int | None,
     options: GenerateOptions,
     rng: random.Random,
-) -> tuple[Level, list[Instruction], int] | None:
+) -> tuple[tuple[Level, list[Instruction], int] | None, str]:
     start_x = options.width // 2
     start_y = options.height // 2
     hidden_solution = _random_program(options.solution_length, rng)
     if has_meaningless_jump_instruction(hidden_solution):
-        return None
+        return None, "mj"
 
     trace = _build_constraint_trace(
         hidden_solution,
@@ -1070,15 +1070,15 @@ def _try_generate_level(
         rng,
     )
     if trace is None:
-        return None
+        return None, "ct"
 
     min_interesting_steps = max(10, math.floor((options.width + options.height) * 0.75))
     if trace.steps < min_interesting_steps:
-        return None
+        return None, "ms"
     if trace.jump_exec_count == 0 or trace.sense_exec_count == 0:
-        return None
+        return None, "js"
     if trace.sense_true == 0 or trace.sense_false == 0:
-        return None
+        return None, "sb"
 
     board = _materialize_board(
         options.width,
@@ -1090,9 +1090,9 @@ def _try_generate_level(
         rng,
     )
     if has_straight_escape_lane_from_start(board, start_x, start_y):
-        return None
+        return None, "se"
     if has_one_turn_escape_path_from_start(board, start_x, start_y):
-        return None
+        return None, "ot"
 
     level = Level(
         version=2,
@@ -1110,35 +1110,35 @@ def _try_generate_level(
 
     result = simulate_program(level, hidden_solution, options.execution_limit)
     if result.outcome != "escape":
-        return None
+        return None, "ne"
     if result.jump_exec_count == 0 or result.sense_exec_count == 0:
-        return None
+        return None, "rj"
     if result.steps < min_interesting_steps:
-        return None
+        return None, "rs"
     has_turn_cancel, has_dead_instruction = analyze_execution_path(
         level, hidden_solution, options.execution_limit
     )
     if has_turn_cancel:
-        return None
+        return None, "tc"
     if has_dead_instruction:
-        return None
+        return None, "ux"
     if has_straight_run_at_least(level, hidden_solution, options.max_straight_run, options.execution_limit):
-        return None
+        return None, "sr"
 
     min_direction_types_to_exit = minimum_distinct_directions_to_exit(level)
     if min_direction_types_to_exit is None:
-        return None
+        return None, "np"
     if min_direction_types_to_exit < options.min_direction_types_to_exit:
-        return None
+        return None, "md"
 
     blocked = block_count(board)
     ratio = blocked / (options.width * options.height)
     if ratio < 0.08 or ratio > 0.70:
-        return None
+        return None, "dn"
     if has_easy_two_direction_program(level):
-        return None
+        return None, "pl"
 
-    return level, hidden_solution, result.steps
+    return (level, hidden_solution, result.steps), "ok"
 
 
 def generate_level(
@@ -1170,12 +1170,12 @@ def generate_level(
 
     random_source = rng or random.Random()
     for attempt in range(1, options.max_attempts + 1):
-        generated = _try_generate_level(level_id, options, random_source)
+        generated, reject_code = _try_generate_level(level_id, options, random_source)
         if progress_callback is not None:
             progress_callback(
                 attempt,
                 options.max_attempts,
-                "accepted" if generated is not None else "rejected",
+                "accepted" if generated is not None else f"rejected:{reject_code}",
             )
         if generated is None:
             continue

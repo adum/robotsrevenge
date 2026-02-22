@@ -42,6 +42,48 @@ def clear_progress_line(previous_width: int, enabled: bool = True) -> None:
     sys.stdout.flush()
 
 
+REJECT_CODE_ORDER = (
+    "sr",  # straight-run limit
+    "md",  # min direction types
+    "pl",  # easy path within program limit
+    "ux",  # unused instructions
+    "mj",  # meaningless jump
+    "ct",  # constraint trace failed
+    "ms",  # min-step threshold not met (trace)
+    "js",  # missing jump/sense execution in trace
+    "sb",  # sense branch split missing in trace
+    "se",  # straight escape lane from start
+    "ot",  # one-turn escape path from start
+    "ne",  # hidden solution did not escape
+    "rj",  # missing jump/sense execution in replay
+    "rs",  # min-step threshold not met (replay)
+    "tc",  # immediate turn-cancel pattern
+    "np",  # no movement-only path to edge subset
+    "dn",  # density outside accepted range
+)
+
+
+def format_reject_counts(reject_counts: dict[str, int]) -> str:
+    if not reject_counts:
+        return "-"
+    parts: list[str] = []
+    seen: set[str] = set()
+    for code in REJECT_CODE_ORDER:
+        count = reject_counts.get(code, 0)
+        if count <= 0:
+            continue
+        parts.append(f"{code}={count}")
+        seen.add(code)
+    for code in sorted(reject_counts):
+        if code in seen:
+            continue
+        count = reject_counts[code]
+        if count <= 0:
+            continue
+        parts.append(f"{code}={count}")
+    return " ".join(parts) if parts else "-"
+
+
 def choose_level_options(
     level_number: int,
     start_level: int,
@@ -67,7 +109,8 @@ def choose_level_options(
             min_direction_types_to_exit=args.min_direction_types_to_exit,
         )
 
-    speed_scale = 1.0 + 0.5 * (intensity - 1.0)
+    # Keep progression smooth at high intensity; avoid saturating by level 2.
+    speed_scale = 1.0 + 0.18 * (math.sqrt(intensity) - 1.0)
     effective_progress = clamp_float(progress * speed_scale, 0.0, 1.0)
     wave_scale = clamp_float(1.0 + 0.25 * (intensity - 1.0), 0.6, 3.0)
 
@@ -96,8 +139,15 @@ def choose_level_options(
     )
 
     # Mostly scale difficulty via solution/program length.
-    base_solution_delta = max(6, int(round(span * 0.18)))
-    scaled_solution_delta = max(1, int(round(base_solution_delta * intensity)))
+    base_solution_delta = max(4, int(round(span * 0.14)))
+    intensity_scale = 1.0 + 0.45 * (math.sqrt(intensity) - 1.0)
+    size_bonus = max(
+        0,
+        int(round((size - base_size) * (0.15 + 0.03 * (intensity - 1.0)))),
+    )
+    scaled_solution_delta = max(1, int(round(base_solution_delta * intensity_scale + size_bonus)))
+    size_delta_cap = max(6, int(round(size * (0.22 + 0.02 * math.sqrt(intensity)))))
+    scaled_solution_delta = min(scaled_solution_delta, size_delta_cap)
     solution_target_max = min(core.MAX_PROGRAM_LIMIT - 1, baseline_solution_length + scaled_solution_delta)
     solution_trend = baseline_solution_length + (solution_target_max - baseline_solution_length) * effective_progress
     solution_wave_raw = 1.1 * math.sin(level_number * 0.73) + 0.9 * math.sin(level_number * 0.21 + 0.4)
@@ -282,6 +332,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--show-reject-codes",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Show per-reason reject codes in live progress output "
+            "(use --no-show-reject-codes to hide, default: true)."
+        ),
+    )
+    parser.add_argument(
         "--progressive-intensity",
         type=float,
         default=1.0,
@@ -403,16 +462,18 @@ def main(argv: list[str]) -> int:
         f"progressive={'on' if args.progressive_difficulty else 'off'}, "
         f"intensity={args.progressive_intensity}, progressive_max_size={args.progressive_max_size}, "
         f"max_straight_run={args.max_straight_run}, min_direction_types_to_exit={args.min_direction_types_to_exit}, "
-        f"best_of={args.best_of}, "
+        f"best_of={args.best_of}, reject_codes={'on' if args.show_reject_codes else 'off'}, "
         f"square_size_base={base_size})"
     )
 
     for level_number in range(args.start_level, args.max_level + 1):
         candidate_pool: list[tuple[core.GeneratedLevel, core.GenerateOptions, int]] = []
         last_error = None
+        reject_counts: dict[str, int] = {}
         seed_tries_used = 0
         progress_width = 0
         attempt_field_width = 1
+        constraints_announced = False
         max_seed_tries_text = "inf" if args.level_seed_retries == 0 else str(args.level_seed_retries)
 
         def progress_status(
@@ -421,6 +482,12 @@ def main(argv: list[str]) -> int:
             max_attempts: int | None = None,
         ) -> None:
             nonlocal progress_width, attempt_field_width
+            status_text = status
+            if status.startswith("rejected:"):
+                reject_code = status.split(":", 1)[1] or "??"
+                reject_counts[reject_code] = reject_counts.get(reject_code, 0) + 1
+                status_text = f"rejected({reject_code})" if args.show_reject_codes else "rejected"
+            reject_counts_suffix = f", {format_reject_counts(reject_counts)}" if args.show_reject_codes else ""
             if not show_live_progress:
                 return
             if max_attempts is not None:
@@ -438,7 +505,7 @@ def main(argv: list[str]) -> int:
                     f"best_of={len(candidate_pool)}/{args.best_of}, "
                     f"best_min_moves={best_min_moves_text}, "
                     f"attempts={attempt_text}/{max_attempts_text}, "
-                    f"status={status}"
+                    f"status={status_text}{reject_counts_suffix}"
                 ),
                 progress_width,
                 show_live_progress,
@@ -458,6 +525,20 @@ def main(argv: list[str]) -> int:
                 args=args,
                 level_rng=level_tuning_rng,
             )
+            if show_live_progress and not constraints_announced:
+                print(
+                    f"Level {level_number} constraints: "
+                    f"size={candidate_options.width}x{candidate_options.height}, "
+                    f"density={candidate_options.density * 100.0:.1f}%, "
+                    f"target_sol={candidate_options.solution_length}, "
+                    f"plim={candidate_options.program_limit}, "
+                    f"elim={candidate_options.execution_limit}, "
+                    f"max_attempts={candidate_options.max_attempts}, "
+                    f"max_straight_run={candidate_options.max_straight_run}, "
+                    f"min_direction_types_to_exit={candidate_options.min_direction_types_to_exit}, "
+                    f"best_of={args.best_of}"
+                )
+                constraints_announced = True
             progress_status("searching", 0, candidate_options.max_attempts)
             try:
                 candidate_generated = core.generate_level(
