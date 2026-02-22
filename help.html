@@ -34,16 +34,23 @@
       <section class="panel">
         <section class="block">
           <h2>Game Objective</h2>
-          <p>
-            You write a small looping program to control the robot. The puzzle is solved when the robot exits the board
-            (moves beyond any edge). Crashing into a blocked square fails the run.
-          </p>
-          <ul class="help-list">
-            <li>The robot always starts on the level start square facing <strong>North</strong>.</li>
-            <li>Programs are cyclic: when the pointer passes the last instruction it wraps to the first.</li>
-            <li>Every instruction consumes one execution step.</li>
-            <li>Each level enforces both a program length limit and an execution limit.</li>
-          </ul>
+          <div class="objective-layout">
+            <div class="objective-copy">
+              <p>
+                You write a small looping program to control the robot. The puzzle is solved when the robot exits the board
+                (moves beyond any edge). Crashing into a blocked square fails the run.
+              </p>
+              <ul class="help-list">
+                <li>The robot always starts on the level start square facing <strong>North</strong>.</li>
+                <li>Programs are cyclic: when the pointer passes the last instruction it wraps to the first.</li>
+                <li>Every instruction consumes one execution step.</li>
+                <li>Each level enforces both a program length limit and an execution limit.</li>
+              </ul>
+            </div>
+            <div class="objective-robot-wrap" aria-hidden="true">
+              <img class="objective-robot-icon" src="./assets/robot.svg" alt="" />
+            </div>
+          </div>
         </section>
 
         <section class="block">
@@ -204,7 +211,7 @@
                 <tr>
                   <td><code>J±n</code></td>
                   <td>Jump</td>
-                  <td>Shift instruction pointer by signed offset. <code>J0</code> is normalized to <code>J+1</code>.</td>
+                  <td>Shift instruction pointer by signed offset.</td>
                 </tr>
               </tbody>
             </table>
@@ -297,6 +304,21 @@
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section class="block">
+          <h2>Download Level Files</h2>
+          <p>
+            Level files are publicly available from the deployed site under <code>/levels/</code>.
+            Start with the manifest, then download individual <code>.level</code> files.
+          </p>
+          <ul class="help-list">
+            <li><a href="./levels/manifest.json"><code>/levels/manifest.json</code></a> contains the level list and count.</li>
+            <li><a href="./levels/1.level"><code>/levels/1.level</code></a> is the first level file (replace the number as needed).</li>
+          </ul>
+          <p>CLI example:</p>
+          <pre class="help-code"><code>curl -fsSL https://YOUR_SITE/levels/manifest.json -o manifest.json
+curl -fsSL https://YOUR_SITE/levels/1.level -o 1.level</code></pre>
         </section>
 
         <section class="block">
