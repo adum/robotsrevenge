@@ -41,6 +41,30 @@ body {
   gap: 16px;
 }
 
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px 0;
+}
+
+.brand-icon {
+  width: 32px;
+  height: 32px;
+  display: block;
+  border-radius: 8px;
+  border: 1px solid rgba(20, 33, 29, 0.35);
+  box-shadow: 0 2px 8px rgba(20, 33, 29, 0.18);
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.brand-name {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+}
+
 .main-row {
   display: grid;
   grid-template-columns: 1fr minmax(320px, 410px);
@@ -545,6 +569,10 @@ button.secondary {
 }
 
 @media (max-width: 640px) {
+  .brand-name {
+    font-size: 18px;
+  }
+
   .program-line-bottom {
     grid-template-columns: 1fr;
   }
