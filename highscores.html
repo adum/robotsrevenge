@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Robot's Revenge Highscores</title>
+    <link rel="icon" type="image/x-icon" href="./assets/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="./assets/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/favicon-180.png" />
+    <link rel="stylesheet" href="./index.css" />
+    <link rel="stylesheet" href="./highscores.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <div class="brand">
+        <img
+          class="brand-icon"
+          src="./assets/icon_ui_64.png"
+          alt="Robot's Revenge icon"
+          width="32"
+          height="32"
+        />
+        <div class="brand-title-wrap">
+          <div class="brand-name">Robot's Revenge</div>
+          <div class="brand-level">Highscores</div>
+        </div>
+        <a class="brand-link" href="./index.html" title="Back to the game.">Back To Game</a>
+      </div>
+
+      <section class="panel">
+        <section class="block">
+          <div class="scores-header">
+            <h2>Top Cleared Level By Player</h2>
+            <button id="refreshBtn" class="secondary" title="Reload highscores from server.">Refresh</button>
+          </div>
+          <div id="scoresMeta" class="meta">Loading highscores...</div>
+          <div class="scores-table-wrap">
+            <table class="scores-table" aria-label="Highscores table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Player ID</th>
+                  <th>Top Level</th>
+                  <th>Reached At</th>
+                </tr>
+              </thead>
+              <tbody id="scoresBody">
+                <tr>
+                  <td colspan="4">Loading...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </div>
+
+    <script src="./highscores.js"></script>
+  </body>
+</html>

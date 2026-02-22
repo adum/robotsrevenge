@@ -1,0 +1,91 @@
+.brand-title-wrap {
+  display: grid;
+  gap: 2px;
+}
+
+.brand-level {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(20, 33, 29, 0.35);
+  background: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.brand-link {
+  margin-left: auto;
+  border: 1px solid var(--ink);
+  border-radius: 10px;
+  padding: 7px 10px;
+  color: var(--ink);
+  background: #fff;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.brand-link:hover {
+  background: rgba(20, 33, 29, 0.06);
+}
+
+.scores-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#scoresMeta {
+  font-family: "JetBrains Mono", monospace;
+}
+
+.scores-table-wrap {
+  border: 1px solid rgba(20, 33, 29, 0.22);
+  border-radius: 12px;
+  background: #fff;
+  overflow: auto;
+}
+
+.scores-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 640px;
+}
+
+.scores-table th,
+.scores-table td {
+  padding: 9px 10px;
+  text-align: left;
+  border-bottom: 1px solid rgba(20, 33, 29, 0.14);
+}
+
+.scores-table th {
+  background: rgba(20, 33, 29, 0.04);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.scores-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.scores-table td code {
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .brand-link {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
+  .brand-level {
+    font-size: 11px;
+  }
+}

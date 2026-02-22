@@ -62,6 +62,9 @@ def copy_runtime(out_dir: Path) -> None:
     shutil.copy2(ROOT / "play.html", out_dir / "index.html")
     shutil.copy2(ROOT / "play.js", out_dir / "play.js")
     shutil.copy2(ROOT / "play.css", out_dir / "play.css")
+    shutil.copy2(ROOT / "highscores.html", out_dir / "highscores.html")
+    shutil.copy2(ROOT / "highscores.js", out_dir / "highscores.js")
+    shutil.copy2(ROOT / "highscores.css", out_dir / "highscores.css")
     shutil.copy2(ROOT / "index.css", out_dir / "index.css")
     shutil.copytree(ROOT / "assets", out_dir / "assets", dirs_exist_ok=True)
 

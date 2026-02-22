@@ -3,6 +3,23 @@
   gap: 2px;
 }
 
+.brand-link {
+  margin-left: auto;
+  border: 1px solid var(--ink);
+  border-radius: 10px;
+  padding: 7px 10px;
+  color: var(--ink);
+  background: #fff;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.brand-link:hover {
+  background: rgba(20, 33, 29, 0.06);
+}
+
 .brand-level {
   display: inline-flex;
   align-items: center;
@@ -59,6 +76,11 @@
 }
 
 @media (max-width: 640px) {
+  .brand-link {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
   .brand-level {
     font-size: 11px;
   }

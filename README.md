@@ -102,7 +102,9 @@ npx wrangler pages dev dist
 ## Runtime Notes
 
 - Playable UI is `play.html` (shipped as `index.html` in `dist/`)
+- Highscores UI is `highscores.html` (shipped to `dist/highscores.html`)
 - Verification API is `functions/api/submit.js` (`POST /api/submit`)
+- Highscores API is `functions/api/highscores.js` (`GET /api/highscores`)
 - Submission results are persisted in D1 table `submission_results` with:
   - `player_id`
   - `level_number`
