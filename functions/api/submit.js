@@ -97,6 +97,29 @@ function parseProgramText(rawText) {
   return { program, error: null };
 }
 
+function canonicalInstructionText(inst) {
+  if (!inst || typeof inst.op !== "string") {
+    return "?";
+  }
+  if (inst.op !== "J") {
+    return inst.op;
+  }
+  const offset = Number.isFinite(inst.arg) ? Math.trunc(inst.arg) : 1;
+  return `J${offset >= 0 ? "+" : ""}${offset}`;
+}
+
+function canonicalProgramText(program) {
+  return program.map((inst) => canonicalInstructionText(inst)).join(" ");
+}
+
+async function sha256Hex(text) {
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 function parseLevelText(rawText) {
   const trimmed = rawText.trim();
   if (!trimmed) {
@@ -264,6 +287,38 @@ async function loadLevelText(context, levelNumber) {
   return response.text();
 }
 
+function getDb(context) {
+  const db = context && context.env ? context.env.DB : null;
+  if (!db || typeof db.prepare !== "function") {
+    throw new Error("D1 binding DB is not configured.");
+  }
+  return db;
+}
+
+async function persistSubmission(context, data) {
+  const db = getDb(context);
+  await db
+    .prepare(
+      `INSERT INTO submission_results (
+        player_id,
+        level_number,
+        program,
+        result,
+        submitted_at,
+        solution_hash
+      ) VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      data.playerId,
+      data.levelNumber,
+      data.program,
+      data.result,
+      data.submittedAt,
+      data.solutionHash
+    )
+    .run();
+}
+
 export async function onRequestOptions() {
   return new Response(null, { status: 204, headers: withCors() });
 }
@@ -306,6 +361,19 @@ export async function onRequestPost(context) {
     }
 
     const result = simulateProgram(program, level);
+    const canonicalProgram = canonicalProgramText(program);
+    const solutionHash = await sha256Hex(canonicalProgram);
+    const submittedAt = new Date().toISOString();
+
+    await persistSubmission(context, {
+      playerId,
+      levelNumber,
+      program: canonicalProgram,
+      result: result.outcome,
+      submittedAt,
+      solutionHash,
+    });
+
     return json({
       ok: true,
       player_id: playerId,
@@ -315,6 +383,8 @@ export async function onRequestPost(context) {
       outcome: result.outcome,
       steps: result.steps,
       program_length: program.length,
+      submitted_at: submittedAt,
+      solution_hash: solutionHash,
     });
   } catch (error) {
     return json(

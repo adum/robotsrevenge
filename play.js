@@ -45,6 +45,7 @@ const submitSolutionBtn = document.getElementById("submitSolutionBtn");
 const loadSelectedLevelBtn = document.getElementById("loadSelectedLevelBtn");
 const levelJumpRange = document.getElementById("levelJumpRange");
 const levelJumpNumber = document.getElementById("levelJumpNumber");
+let submitSuccessTimer = null;
 
 const state = {
   width: 11,
@@ -528,11 +529,29 @@ function updateCampaignMeta() {
   levelJumpNumber.value = String(state.selectedLevel);
 }
 
+function clearSubmitSuccessFeedback() {
+  if (submitSuccessTimer) {
+    clearTimeout(submitSuccessTimer);
+    submitSuccessTimer = null;
+  }
+  submitSolutionBtn.classList.remove("verified-flash");
+}
+
+function flashSubmitSuccessFeedback() {
+  clearSubmitSuccessFeedback();
+  submitSolutionBtn.classList.add("verified-flash");
+  submitSuccessTimer = setTimeout(() => {
+    submitSolutionBtn.classList.remove("verified-flash");
+    submitSuccessTimer = null;
+  }, 1800);
+}
+
 function addInstruction(op) {
   if (state.userProgram.length >= state.programLimit) {
     setStatus(`Program length limit is ${state.programLimit}.`, "bad");
     return;
   }
+  clearSubmitSuccessFeedback();
   const selected = state.selectedProgramIndex;
   const hasValidSelection = selected >= 0 && selected < state.userProgram.length;
   const insertIndex = hasValidSelection ? selected + 1 : state.userProgram.length;
@@ -547,6 +566,7 @@ function deleteSelectedInstruction() {
   if (index < 0 || index >= state.userProgram.length) {
     return;
   }
+  clearSubmitSuccessFeedback();
   state.userProgram.splice(index, 1);
   if (state.selectedProgramIndex >= state.userProgram.length) {
     state.selectedProgramIndex = state.userProgram.length - 1;
@@ -856,6 +876,7 @@ async function fetchLevelText(levelNumber) {
 
 function applyLoadedLevel(loaded, levelNumber) {
   stopAutoRun();
+  clearSubmitSuccessFeedback();
   state.currentLevel = levelNumber;
   state.levelId = loaded.id || String(levelNumber);
   state.width = loaded.width;
@@ -947,6 +968,7 @@ async function submitCurrentProgram() {
     return;
   }
 
+  clearSubmitSuccessFeedback();
   state.submitting = true;
   updateCampaignMeta();
   setStatus("Submitting program for verification...");
@@ -973,6 +995,7 @@ async function submitCurrentProgram() {
     }
 
     if (data.solved) {
+      flashSubmitSuccessFeedback();
       const unlocked = unlockProgressForLevel(state.currentLevel);
       updateCampaignMeta();
       if (unlocked) {
@@ -1032,6 +1055,7 @@ async function pasteProgramFromClipboard() {
 
   state.userProgram = parsed.program;
   state.selectedProgramIndex = state.userProgram.length > 0 ? 0 : -1;
+  clearSubmitSuccessFeedback();
   resetRun(false);
   if (parsed.clampedOffsets > 0) {
     setStatus(`Pasted ${parsed.program.length} instructions (clamped ${parsed.clampedOffsets} jump offsets).`, "");
@@ -1061,6 +1085,7 @@ function configureEventHandlers() {
   addJBtn.addEventListener("click", () => addInstruction("J"));
   deleteSelectedBtn.addEventListener("click", deleteSelectedInstruction);
   clearProgramBtn.addEventListener("click", () => {
+    clearSubmitSuccessFeedback();
     state.userProgram = [];
     state.selectedProgramIndex = -1;
     resetRun(false);

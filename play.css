@@ -25,6 +25,39 @@
   width: 100%;
 }
 
+#submitSolutionBtn {
+  transition:
+    transform 0.12s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+#submitSolutionBtn.verified-flash {
+  background: var(--lime);
+  border-color: var(--lime-dark);
+  color: #fff;
+  box-shadow: 0 0 0 2px rgba(47, 125, 88, 0.26);
+  animation: submit-verified-pop 220ms ease-out;
+}
+
+#submitSolutionBtn.verified-flash::after {
+  content: " \2713";
+  font-weight: 700;
+}
+
+@keyframes submit-verified-pop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 @media (max-width: 640px) {
   .brand-level {
     font-size: 11px;

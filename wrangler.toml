@@ -1,3 +1,10 @@
 name = "robotsrevenge"
 compatibility_date = "2026-02-22"
 pages_build_output_dir = "dist"
+
+# D1 binding (configure with your real database IDs before deploy):
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "robotsrevenge-results"
+# database_id = "REPLACE_WITH_D1_DATABASE_ID"
+# preview_database_id = "REPLACE_WITH_D1_PREVIEW_DATABASE_ID"
