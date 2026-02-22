@@ -7,11 +7,11 @@ Deployable campaign build for Cloudflare Pages (no in-browser generator).
 - Python 3.10+ (for build and level generation scripts)
 - Node.js + npm (for Wrangler CLI)
 - Cloudflare account with Pages enabled
-- Wrangler CLI installed and authenticated:
+- Wrangler available either globally or via `npx`:
 
 ```bash
 npm install -g wrangler
-wrangler login
+npx wrangler login
 ```
 
 ## Deployment Flow
@@ -47,7 +47,7 @@ This creates `dist/` with:
 
 ### 3. Deploy to Cloudflare Pages
 
-Default project name is `robots-revenge`:
+Default project name is `robotsrevenge`:
 
 ```bash
 ./scripts/deploy_pages.sh
@@ -62,7 +62,9 @@ CF_PAGES_PROJECT=my-project-name ./scripts/deploy_pages.sh
 This script runs:
 
 1. `python3 scripts/build_distribution.py`
-2. `wrangler pages deploy dist --project-name <name> --functions functions`
+2. `wrangler pages deploy dist --project-name <name>` (or `npx wrangler ...`)
+
+Note: Cloudflare Pages uploads `functions/` automatically when deploying from the repo root.
 
 ## Local Preview (optional)
 
@@ -70,7 +72,7 @@ Build first, then run a local Pages preview with Functions:
 
 ```bash
 python3 scripts/build_distribution.py
-wrangler pages dev dist --functions functions
+npx wrangler pages dev dist
 ```
 
 ## Runtime Notes
@@ -78,4 +80,3 @@ wrangler pages dev dist --functions functions
 - Playable UI is `play.html` (shipped as `index.html` in `dist/`)
 - Verification API is `functions/api/submit.js` (`POST /api/submit`)
 - API currently validates submissions against level files and simulator rules; persistence to a database can be added later
-
