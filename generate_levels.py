@@ -70,7 +70,30 @@ def choose_level_options(
     speed_scale = 1.0 + 0.5 * (intensity - 1.0)
     effective_progress = clamp_float(progress * speed_scale, 0.0, 1.0)
     wave_scale = clamp_float(1.0 + 0.25 * (intensity - 1.0), 0.6, 3.0)
-    baseline_solution_length = min(args.solution_length, max(3, base_size + 1))
+
+    # Size increases more slowly than program complexity and fluctuates across the run.
+    base_solution_reference = min(args.solution_length, max(3, base_size + 1))
+    base_size_delta = max(
+        2,
+        int(round(base_solution_reference * 0.45)),
+        int(round(span * 0.05)),
+    )
+    scaled_size_delta = max(2, int(round(base_size_delta * (0.6 + 0.4 * intensity))))
+    size_target_max = min(args.progressive_max_size, base_size + scaled_size_delta)
+    size_trend = base_size + (size_target_max - base_size) * effective_progress
+    size_wave = wave_scale * math.sin(level_number * 0.37 + 1.2) + level_rng.uniform(-0.6, 0.6) * wave_scale
+    size = int(round(size_trend + size_wave))
+    size_floor = base_size + int((size_target_max - base_size) * effective_progress * 0.5)
+    size = max(size_floor, size)
+    size = clamp_int(size, max(4, base_size), size_target_max)
+
+    # Base target length scales with board size, then we add progressive variation.
+    solution_per_size = base_solution_reference / max(1, base_size)
+    baseline_solution_length = clamp_int(
+        int(round(size * solution_per_size)),
+        3,
+        core.MAX_PROGRAM_LIMIT - 1,
+    )
 
     # Mostly scale difficulty via solution/program length.
     base_solution_delta = max(6, int(round(span * 0.18)))
@@ -95,21 +118,6 @@ def choose_level_options(
     slack = int(round(slack_center + level_rng.uniform(-1.0, 1.0)))
     slack = clamp_int(slack, 2, 6)
     program_limit = clamp_int(solution_length + slack, max(4, solution_length), core.MAX_PROGRAM_LIMIT)
-
-    # Size increases more slowly than program complexity and fluctuates across the run.
-    base_size_delta = max(
-        2,
-        int(round((solution_target_max - baseline_solution_length) * 0.45)),
-        int(round(span * 0.05)),
-    )
-    scaled_size_delta = max(2, int(round(base_size_delta * (0.6 + 0.4 * intensity))))
-    size_target_max = min(args.progressive_max_size, base_size + scaled_size_delta)
-    size_trend = base_size + (size_target_max - base_size) * effective_progress
-    size_wave = wave_scale * math.sin(level_number * 0.37 + 1.2) + level_rng.uniform(-0.6, 0.6) * wave_scale
-    size = int(round(size_trend + size_wave))
-    size_floor = base_size + int((size_target_max - base_size) * effective_progress * 0.5)
-    size = max(size_floor, size)
-    size = clamp_int(size, max(4, base_size), size_target_max)
 
     # Fluctuate fill level while trending a bit denser over time.
     density_base = float(args.density)
@@ -404,6 +412,7 @@ def main(argv: list[str]) -> int:
         last_error = None
         seed_tries_used = 0
         progress_width = 0
+        attempt_field_width = 1
         max_seed_tries_text = "inf" if args.level_seed_retries == 0 else str(args.level_seed_retries)
 
         def progress_status(
@@ -411,11 +420,15 @@ def main(argv: list[str]) -> int:
             attempt: int | None = None,
             max_attempts: int | None = None,
         ) -> None:
-            nonlocal progress_width
+            nonlocal progress_width, attempt_field_width
             if not show_live_progress:
                 return
-            attempt_text = "-" if attempt is None else str(attempt)
-            max_attempts_text = "-" if max_attempts is None else str(max_attempts)
+            if max_attempts is not None:
+                attempt_field_width = max(attempt_field_width, len(str(max_attempts)))
+            elif attempt is not None:
+                attempt_field_width = max(attempt_field_width, len(str(attempt)))
+            attempt_text = "-" if attempt is None else str(attempt).rjust(attempt_field_width)
+            max_attempts_text = "-" if max_attempts is None else str(max_attempts).rjust(attempt_field_width)
             best_min_moves = max((entry[0].min_moves_to_exit for entry in candidate_pool), default=None)
             best_min_moves_text = "-" if best_min_moves is None else str(best_min_moves)
             progress_width = update_progress_line(
