@@ -3,21 +3,24 @@
   gap: 2px;
 }
 
-.brand-link {
+.brand-nav {
   margin-left: auto;
-  border: 1px solid var(--ink);
-  border-radius: 10px;
-  padding: 7px 10px;
-  color: var(--ink);
-  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-nav-link {
+  color: var(--accent-dark);
   text-decoration: none;
   font-size: 13px;
   font-weight: 600;
   line-height: 1;
+  border-bottom: 1px solid transparent;
 }
 
-.brand-link:hover {
-  background: rgba(20, 33, 29, 0.06);
+.brand-nav-link:hover {
+  border-bottom-color: currentColor;
 }
 
 .brand-level {
@@ -76,8 +79,11 @@
 }
 
 @media (max-width: 640px) {
-  .brand-link {
-    padding: 6px 8px;
+  .brand-nav {
+    gap: 8px;
+  }
+
+  .brand-nav-link {
     font-size: 12px;
   }
 

@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Robot's Revenge Help</title>
+    <link rel="icon" type="image/x-icon" href="./assets/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="./assets/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./assets/favicon-180.png" />
+    <link rel="stylesheet" href="./index.css" />
+    <link rel="stylesheet" href="./help.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <div class="brand">
+        <img
+          class="brand-icon"
+          src="./assets/icon_ui_64.png"
+          alt="Robot's Revenge icon"
+          width="32"
+          height="32"
+        />
+        <div class="brand-title-wrap">
+          <div class="brand-name">Robot's Revenge</div>
+          <div class="brand-level">Help</div>
+        </div>
+        <nav class="brand-nav" aria-label="Page navigation">
+          <a class="brand-nav-link" href="./index.html">Play</a>
+          <a class="brand-nav-link" href="./highscores.html">Highscores</a>
+        </nav>
+      </div>
+
+      <section class="panel">
+        <section class="block">
+          <h2>Game Objective</h2>
+          <p>
+            You write a small looping program to control the robot. The puzzle is solved when the robot exits the board
+            (moves beyond any edge). Crashing into a blocked square fails the run.
+          </p>
+          <ul class="help-list">
+            <li>The robot always starts on the level start square facing <strong>North</strong>.</li>
+            <li>Programs are cyclic: when the pointer passes the last instruction it wraps to the first.</li>
+            <li>Every instruction consumes one execution step.</li>
+            <li>Each level enforces both a program length limit and an execution limit.</li>
+          </ul>
+        </section>
+
+        <section class="block">
+          <h2>Board Legend</h2>
+          <div class="legend-grid">
+            <div class="legend-item">
+              <div class="legend-swatch legend-empty"></div>
+              <div>
+                <strong>Empty Cell</strong>
+                <div>Robot can move into this square.</div>
+              </div>
+            </div>
+            <div class="legend-item">
+              <div class="legend-swatch legend-blocked"></div>
+              <div>
+                <strong>Blocked Cell</strong>
+                <div>Moving forward into this cell crashes.</div>
+              </div>
+            </div>
+            <div class="legend-item">
+              <div class="legend-swatch legend-start"></div>
+              <div>
+                <strong>Start Cell</strong>
+                <div>Initial robot location for the level.</div>
+              </div>
+            </div>
+            <div class="legend-item">
+              <div class="legend-swatch legend-robot"></div>
+              <div>
+                <strong>Robot</strong>
+                <div>Current position and facing direction.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="block">
+          <h2>Robot Movement Graphics</h2>
+          <p>
+            Example sequence using two instructions. First <code>L</code> turns the robot left in place, then
+            <code>F</code> moves it one square forward in its new facing.
+          </p>
+          <div class="movement-strip">
+            <figure class="move-frame">
+              <div class="mini-board robot-r2 robot-c2 robot-n">
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell start"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+              </div>
+              <figcaption>Start (North)</figcaption>
+            </figure>
+            <div class="move-arrow">L</div>
+            <figure class="move-frame">
+              <div class="mini-board robot-r2 robot-c2 robot-w">
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell start"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+              </div>
+              <figcaption>After L (West)</figcaption>
+            </figure>
+            <div class="move-arrow">F</div>
+            <figure class="move-frame">
+              <div class="mini-board robot-r2 robot-c1 robot-w">
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell start"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+              </div>
+              <figcaption>After F (Moved)</figcaption>
+            </figure>
+          </div>
+
+          <p>
+            <code>S</code> (Sense) does not move the robot. It checks the square ahead:
+            if blocked, execute the very next instruction; if clear, skip one instruction.
+          </p>
+          <div class="sense-grid">
+            <figure class="move-frame">
+              <div class="mini-board robot-r2 robot-c2 robot-n">
+                <div class="mini-cell"></div>
+                <div class="mini-cell blocked"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell start"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+              </div>
+              <figcaption>Blocked ahead: execute next instruction.</figcaption>
+            </figure>
+            <figure class="move-frame">
+              <div class="mini-board robot-r2 robot-c2 robot-n">
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell start"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+                <div class="mini-cell"></div>
+              </div>
+              <figcaption>Clear ahead: skip one instruction.</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        <section class="block">
+          <h2>Instruction Set</h2>
+          <div class="help-table-wrap">
+            <table class="help-table" aria-label="Instruction reference table">
+              <thead>
+                <tr>
+                  <th>Instruction</th>
+                  <th>Name</th>
+                  <th>Effect</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>F</code></td>
+                  <td>Forward</td>
+                  <td>Move one square forward. Exiting the board wins. Moving into a blocked square crashes.</td>
+                </tr>
+                <tr>
+                  <td><code>L</code></td>
+                  <td>Turn Left</td>
+                  <td>Rotate 90 degrees counter-clockwise.</td>
+                </tr>
+                <tr>
+                  <td><code>R</code></td>
+                  <td>Turn Right</td>
+                  <td>Rotate 90 degrees clockwise.</td>
+                </tr>
+                <tr>
+                  <td><code>S</code></td>
+                  <td>Sense</td>
+                  <td>If ahead is blocked, move pointer +1. If ahead is clear/outside, move pointer +2.</td>
+                </tr>
+                <tr>
+                  <td><code>J±n</code></td>
+                  <td>Jump</td>
+                  <td>Shift instruction pointer by signed offset. <code>J0</code> is normalized to <code>J+1</code>.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="block">
+          <h2>Programs, Limits, and Levels</h2>
+          <ul class="help-list">
+            <li><strong>Program limit (<code>plim</code>):</strong> max number of instructions allowed for that level.</li>
+            <li><strong>Execution limit (<code>elim</code>):</strong> max instructions executed before timeout.</li>
+            <li><strong>Progression lock:</strong> level <em>n+1</em> unlocks only after level <em>n</em> is verified as solved.</li>
+            <li><strong>Player ID:</strong> generated once in local storage and reused for submissions/highscores.</li>
+          </ul>
+          <p>
+            The UI allows local simulation, but progression unlocks only after server verification via
+            <code>/api/submit</code>.
+          </p>
+        </section>
+
+        <section class="block">
+          <h2>Cloudflare API</h2>
+          <h3><code>POST /api/submit</code></h3>
+          <p>Verify a program for a specific level and record the result.</p>
+          <pre class="help-code"><code>{
+  "player_id": "player-uuid-or-id",
+  "level": 12,
+  "program": "S F J-2 R F"
+}</code></pre>
+          <p>Typical success response:</p>
+          <pre class="help-code"><code>{
+  "ok": true,
+  "player_id": "player-uuid-or-id",
+  "level": 12,
+  "solved": true,
+  "accepted": true,
+  "outcome": "escape",
+  "steps": 87,
+  "program_length": 5,
+  "submitted_at": "2026-02-22T19:15:10.000Z",
+  "solution_hash": "sha256..."
+}</code></pre>
+
+          <h3><code>GET /api/highscores?limit=250</code></h3>
+          <p>
+            Returns one row per player, grouped by player ID, ranked by the highest passed level
+            (<code>result = "escape"</code>).
+          </p>
+        </section>
+
+        <section class="block">
+          <h2>Level File Format</h2>
+          <p>
+            Levels are stored as query-string style text. Required fields are grid size and board payload; others use defaults.
+          </p>
+          <pre class="help-code"><code>?id=12&x=7&y=7&sx=3&sy=3&plim=10&elim=180&board=....... ..XX... ..X.... ...X... ....... ....... .......</code></pre>
+          <div class="help-table-wrap">
+            <table class="help-table" aria-label="Level parameter reference">
+              <thead>
+                <tr>
+                  <th>Field</th>
+                  <th>Meaning</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>x</code>, <code>y</code></td>
+                  <td>Board width and height.</td>
+                </tr>
+                <tr>
+                  <td><code>board</code></td>
+                  <td>Flattened grid. Empty: <code>.</code> or <code>_</code>. Blocked: <code>X</code>, <code>x</code>, <code>#</code>.</td>
+                </tr>
+                <tr>
+                  <td><code>sx</code>, <code>sy</code></td>
+                  <td>Start position. Start direction is always North.</td>
+                </tr>
+                <tr>
+                  <td><code>plim</code></td>
+                  <td>Program length limit for this level.</td>
+                </tr>
+                <tr>
+                  <td><code>elim</code></td>
+                  <td>Execution step limit before timeout.</td>
+                </tr>
+                <tr>
+                  <td><code>id</code></td>
+                  <td>Optional level identifier shown in metadata.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="block">
+          <h2>Practical Tips</h2>
+          <ul class="help-list">
+            <li>Use <code>S</code> to branch around obstacles instead of hard-coding long turn/step chains.</li>
+            <li>Use short loops with <code>J-1</code> style jumps to reuse behavior.</li>
+            <li>If you time out, reduce wandering and remove non-essential turns.</li>
+            <li>If a level feels close, run step-by-step to inspect pointer and facing direction changes.</li>
+          </ul>
+        </section>
+      </section>
+    </div>
+  </body>
+</html>
