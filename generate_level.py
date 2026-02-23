@@ -11,6 +11,66 @@ from pathlib import Path
 import sensejump_core as core
 
 
+REJECT_CODE_ORDER = (
+    "sr",
+    "md",
+    "pl",
+    "ux",
+    "mj",
+    "ct",
+    "ms",
+    "js",
+    "sb",
+    "se",
+    "ot",
+    "ne",
+    "rj",
+    "rs",
+    "tc",
+    "np",
+    "dn",
+)
+
+
+def update_progress_line(line: str, previous_width: int, enabled: bool = True) -> int:
+    if not enabled:
+        return 0
+    padded = line
+    if previous_width > len(line):
+        padded += " " * (previous_width - len(line))
+    sys.stdout.write("\r" + padded)
+    sys.stdout.flush()
+    return len(line)
+
+
+def clear_progress_line(previous_width: int, enabled: bool = True) -> None:
+    if not enabled or previous_width <= 0:
+        return
+    sys.stdout.write("\r" + (" " * previous_width) + "\r")
+    sys.stdout.flush()
+
+
+def format_reject_counts(reject_counts: dict[str, int]) -> str:
+    if not reject_counts:
+        return "-"
+    parts: list[str] = []
+    seen: set[str] = set()
+    for code in REJECT_CODE_ORDER:
+        count = reject_counts.get(code, 0)
+        if count <= 0:
+            continue
+        parts.append(f"{code}={count}")
+        seen.add(code)
+    for code in sorted(reject_counts):
+        if code in seen:
+            continue
+        count = reject_counts[code]
+        if count <= 0:
+            continue
+        parts.append(f"{code}={count}")
+    return " ".join(parts) if parts else "-"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -54,7 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-attempts",
         type=int,
         default=650,
-        help="Max generation attempts before failing (default: 650).",
+        help="Max generation attempts before failing (0 = infinite, default: 650).",
     )
     parser.add_argument(
         "--max-straight-run",
@@ -105,6 +165,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--print-solution",
         action="store_true",
         help="Print hidden solution text to stderr for local debugging.",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show live generation progress and reject reason counts.",
     )
     return parser
 
@@ -184,6 +249,14 @@ def main(argv: list[str]) -> int:
             f"Info: forcing square board; using width={args.width} and ignoring height={args.height}.",
             file=sys.stderr,
         )
+    program_limit = args.program_limit
+    if args.solution_length > program_limit:
+        print(
+            f"Info: --solution-length {args.solution_length} exceeds --program-limit {program_limit}; "
+            f"using program limit {args.solution_length}.",
+            file=sys.stderr,
+        )
+        program_limit = args.solution_length
 
     density = args.density / 100.0
     options = core.GenerateOptions(
@@ -191,19 +264,72 @@ def main(argv: list[str]) -> int:
         height=base_size,
         density=density,
         solution_length=args.solution_length,
-        program_limit=args.program_limit,
+        program_limit=program_limit,
         execution_limit=args.execution_limit,
         max_attempts=args.max_attempts,
         max_straight_run=args.max_straight_run,
         min_direction_types_to_exit=args.min_direction_types_to_exit,
     )
+    max_attempts_text = "inf" if options.max_attempts == 0 else str(options.max_attempts)
+    show_live_progress = args.verbose and sys.stdout.isatty()
+    progress_width = 0
+    attempt_field_width = 3 if options.max_attempts == 0 else max(1, len(str(options.max_attempts)))
+    reject_counts: dict[str, int] = {}
+
+    if args.verbose:
+        print(
+            f"Level {args.level_id} constraints: "
+            f"size={options.width}x{options.height}, "
+            f"density={args.density:.1f}%, "
+            f"target_sol={options.solution_length}, "
+            f"plim={options.program_limit}, "
+            f"elim={options.execution_limit}, "
+            f"max_attempts={max_attempts_text}, "
+            f"max_straight_run={options.max_straight_run}, "
+            f"min_direction_types_to_exit={options.min_direction_types_to_exit}"
+        )
+
+    def progress_callback(attempt: int, max_attempts: int, status: str) -> None:
+        nonlocal progress_width, attempt_field_width
+        status_text = status
+        if status.startswith("rejected:"):
+            reject_code = status.split(":", 1)[1] or "??"
+            reject_counts[reject_code] = reject_counts.get(reject_code, 0) + 1
+            status_text = f"rejected({reject_code})"
+        if not show_live_progress:
+            return
+        attempt_field_width = max(attempt_field_width, len(str(attempt)))
+        attempt_text = str(attempt).rjust(attempt_field_width)
+        max_text = "inf" if max_attempts == 0 else str(max_attempts).rjust(attempt_field_width)
+        reject_suffix = f", {format_reject_counts(reject_counts)}" if reject_counts else ""
+        progress_width = update_progress_line(
+            f"Level {args.level_id}: attempts={attempt_text}/{max_text}, status={status_text}{reject_suffix}",
+            progress_width,
+            show_live_progress,
+        )
 
     try:
-        generated = core.generate_level(args.level_id, options, random.Random(args.seed))
+        generated = core.generate_level(
+            args.level_id,
+            options,
+            random.Random(args.seed),
+            progress_callback=progress_callback if args.verbose else None,
+        )
         sealed_unreachable_cells = finalize_generated_level(generated, args.seal_unreachable)
     except (ValueError, RuntimeError) as exc:
+        clear_progress_line(progress_width, show_live_progress)
         print(f"Error: {exc}", file=sys.stderr)
         return 2
+    clear_progress_line(progress_width, show_live_progress)
+
+    if args.verbose:
+        print(
+            f"Level {args.level_id}: ok "
+            f"(attempts={generated.attempts_used}, solution_steps={generated.solution_steps}, "
+            f"min_moves_to_exit={generated.min_moves_to_exit}, "
+            f"min_direction_types_to_exit={generated.min_direction_types_to_exit}, "
+            f"rejects={format_reject_counts(reject_counts)})"
+        )
 
     if args.level_out:
         args.level_out.parent.mkdir(parents=True, exist_ok=True)

@@ -1206,15 +1206,17 @@ def generate_level(
         raise ValueError(f"program_limit cannot exceed {MAX_PROGRAM_LIMIT}")
     if options.execution_limit < 1:
         raise ValueError("execution_limit must be >= 1")
-    if options.max_attempts < 1:
-        raise ValueError("max_attempts must be >= 1")
+    if options.max_attempts < 0:
+        raise ValueError("max_attempts must be >= 0")
     if options.max_straight_run < 0:
         raise ValueError("max_straight_run must be >= 0")
     if options.min_direction_types_to_exit < 1 or options.min_direction_types_to_exit > 4:
         raise ValueError("min_direction_types_to_exit must be between 1 and 4")
 
     random_source = rng or random.Random()
-    for attempt in range(1, options.max_attempts + 1):
+    attempt = 0
+    while options.max_attempts == 0 or attempt < options.max_attempts:
+        attempt += 1
         generated, reject_code = _try_generate_level(level_id, options, random_source)
         if progress_callback is not None:
             progress_callback(

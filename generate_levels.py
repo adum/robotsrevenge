@@ -215,7 +215,10 @@ def choose_level_options(
     execution_limit = clamp_int(args.execution_limit + execution_bonus + execution_wave, args.execution_limit, 15000)
 
     attempt_scale = 1.0 + 0.6 * (intensity - 1.0)
-    max_attempts = args.max_attempts + int(round(150 * effective_progress * attempt_scale))
+    if args.max_attempts == 0:
+        max_attempts = 0
+    else:
+        max_attempts = args.max_attempts + int(round(150 * effective_progress * attempt_scale))
 
     return core.GenerateOptions(
         width=size,
@@ -291,7 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-attempts",
         type=int,
         default=650,
-        help="Max generation attempts per level (default: 650).",
+        help="Max generation attempts per level (0 = infinite, default: 650).",
     )
     parser.add_argument(
         "--max-straight-run",
@@ -574,9 +577,12 @@ def main(argv: list[str]) -> int:
         print(
             f"Info: forcing square boards; using width={args.width} and ignoring height={args.height}."
         )
-    if not args.progressive_difficulty and args.solution_length > args.program_limit:
-        print("Error: --solution-length cannot exceed --program-limit.", file=sys.stderr)
-        return 2
+    if args.solution_length > args.program_limit:
+        print(
+            f"Info: --solution-length {args.solution_length} exceeds --program-limit {args.program_limit}; "
+            f"using program limit {args.solution_length}."
+        )
+        args.program_limit = args.solution_length
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     args.solution_dir.mkdir(parents=True, exist_ok=True)
@@ -626,7 +632,12 @@ def main(argv: list[str]) -> int:
             elif attempt is not None:
                 attempt_field_width = max(attempt_field_width, len(str(attempt)))
             attempt_text = "-" if attempt is None else str(attempt).rjust(attempt_field_width)
-            max_attempts_text = "-" if max_attempts is None else str(max_attempts).rjust(attempt_field_width)
+            if max_attempts is None:
+                max_attempts_text = "-"
+            elif max_attempts == 0:
+                max_attempts_text = "inf".rjust(attempt_field_width)
+            else:
+                max_attempts_text = str(max_attempts).rjust(attempt_field_width)
             best_min_moves = max((entry[0].min_moves_to_exit for entry in candidate_pool), default=None)
             best_min_moves_text = "-" if best_min_moves is None else str(best_min_moves)
             progress_width = update_progress_line(
@@ -664,7 +675,7 @@ def main(argv: list[str]) -> int:
                     f"target_sol={candidate_options.solution_length}, "
                     f"plim={candidate_options.program_limit}, "
                     f"elim={candidate_options.execution_limit}, "
-                    f"max_attempts={candidate_options.max_attempts}, "
+                    f"max_attempts={'inf' if candidate_options.max_attempts == 0 else candidate_options.max_attempts}, "
                     f"max_straight_run={candidate_options.max_straight_run}, "
                     f"min_direction_types_to_exit={candidate_options.min_direction_types_to_exit}, "
                     f"best_of={args.best_of}"
