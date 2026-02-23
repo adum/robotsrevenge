@@ -18,8 +18,14 @@ def build_parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument("level_id", help="Level identifier (for id=... in the level file).")
-    parser.add_argument("--width", type=int, default=11, help="Board width (default: 11).")
-    parser.add_argument("--height", type=int, default=11, help="Board height (default: 11).")
+    parser.add_argument("--width", type=int, default=11, help="Legacy base size input (default: 11).")
+    parser.add_argument("--height", type=int, default=11, help="Legacy input, ignored (boards are square).")
+    parser.add_argument(
+        "--size",
+        type=int,
+        default=None,
+        help="Square board size (overrides --width/--height).",
+    )
     parser.add_argument(
         "--density",
         type=float,
@@ -169,10 +175,20 @@ def main(argv: list[str]) -> int:
     if args.seed is None:
         args.seed = random.SystemRandom().randrange(0, 2**63)
 
+    base_size = args.size if args.size is not None else args.width
+    if base_size < 2:
+        print("Error: square size must be >= 2.", file=sys.stderr)
+        return 2
+    if args.height != args.width and args.size is None:
+        print(
+            f"Info: forcing square board; using width={args.width} and ignoring height={args.height}.",
+            file=sys.stderr,
+        )
+
     density = args.density / 100.0
     options = core.GenerateOptions(
-        width=args.width,
-        height=args.height,
+        width=base_size,
+        height=base_size,
         density=density,
         solution_length=args.solution_length,
         program_limit=args.program_limit,
