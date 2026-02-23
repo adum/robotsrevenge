@@ -365,6 +365,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--elim-from-solution-steps",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Set final level elim to the hidden solution's executed step count after generation "
+            "(use --no-elim-from-solution-steps to keep computed elim, default: true)."
+        ),
+    )
+    parser.add_argument(
         "--progressive-intensity",
         type=float,
         default=1.0,
@@ -415,6 +424,7 @@ def build_solution_payload(
     level_seed: int,
     best_of: int,
     seal_unreachable: bool,
+    elim_from_solution_steps: bool,
     sealed_unreachable_cells: int,
     progressive_difficulty: bool,
     progressive_intensity: float,
@@ -437,6 +447,7 @@ def build_solution_payload(
             "seed": level_seed,
             "best_of": best_of,
             "seal_unreachable": seal_unreachable,
+            "elim_from_solution_steps": elim_from_solution_steps,
             "sealed_unreachable_cells": sealed_unreachable_cells,
             "attempts_used": generated.attempts_used,
             "progressive_difficulty": progressive_difficulty,
@@ -450,7 +461,8 @@ def build_solution_payload(
             "density_percent": round(options.density * 100.0, 2),
             "target_solution_len": options.solution_length,
             "program_limit": options.program_limit,
-            "execution_limit": options.execution_limit,
+            "execution_limit": generated.level.execution_limit,
+            "generation_execution_limit": options.execution_limit,
             "max_attempts": options.max_attempts,
             "max_straight_run": options.max_straight_run,
             "min_direction_types_to_exit_required": options.min_direction_types_to_exit,
@@ -476,6 +488,17 @@ def finalize_generated_level(generated: core.GeneratedLevel, seal_unreachable: b
     generated.min_moves_to_exit = min_moves_to_exit
     generated.min_direction_types_to_exit = min_direction_types_to_exit
     return sealed_unreachable_cells
+
+
+def apply_final_execution_limit(generated: core.GeneratedLevel, elim_from_solution_steps: bool) -> None:
+    if not elim_from_solution_steps:
+        return
+    target_elim = max(1, generated.solution_steps)
+    if generated.level.execution_limit == target_elim:
+        return
+    generated.level.execution_limit = target_elim
+    generated.level_text = core.format_level(generated.level)
+    generated.level_hash = core.compute_level_hash(generated.level)
 
 
 def main(argv: list[str]) -> int:
@@ -573,6 +596,7 @@ def main(argv: list[str]) -> int:
         f"max_straight_run={args.max_straight_run}, min_direction_types_to_exit={args.min_direction_types_to_exit}, "
         f"best_of={args.best_of}, reject_codes={'on' if args.show_reject_codes else 'off'}, "
         f"seal_unreachable={'on' if args.seal_unreachable else 'off'}, "
+        f"elim_from_solution_steps={'on' if args.elim_from_solution_steps else 'off'}, "
         f"square_size_base={base_size})"
     )
 
@@ -681,6 +705,7 @@ def main(argv: list[str]) -> int:
             key=lambda entry: entry[0].min_moves_to_exit,
         )
         sealed_unreachable_cells = finalize_generated_level(generated, args.seal_unreachable)
+        apply_final_execution_limit(generated, args.elim_from_solution_steps)
 
         clear_progress_line(progress_width, show_live_progress)
         level_path = args.out_dir / f"{level_number}.level"
@@ -690,6 +715,7 @@ def main(argv: list[str]) -> int:
             level_seed=level_seed,
             best_of=args.best_of,
             seal_unreachable=args.seal_unreachable,
+            elim_from_solution_steps=args.elim_from_solution_steps,
             sealed_unreachable_cells=sealed_unreachable_cells,
             progressive_difficulty=args.progressive_difficulty,
             progressive_intensity=args.progressive_intensity,
@@ -709,7 +735,7 @@ def main(argv: list[str]) -> int:
             f"Level {level_number}: ok "
             f"(size={options.width}x{options.height}, density={options.density * 100.0:.1f}%, "
             f"target_sol={options.solution_length}, plim={options.program_limit}, "
-            f"elim={options.execution_limit}, seed_tries={seed_tries_used}, best_of={len(candidate_pool)}/{args.best_of}, "
+            f"elim={generated.level.execution_limit}, seed_tries={seed_tries_used}, best_of={len(candidate_pool)}/{args.best_of}, "
             f"attempts={generated.attempts_used}, sealed_unreachable={sealed_unreachable_cells}, "
             f"solution_steps={generated.solution_steps}, min_moves_to_exit={generated.min_moves_to_exit}, "
             f"min_direction_types_to_exit={generated.min_direction_types_to_exit})"
