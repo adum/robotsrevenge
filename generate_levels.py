@@ -184,19 +184,16 @@ def choose_level_options(
     slack = clamp_int(slack, 2, 6)
     program_limit = clamp_int(solution_length + slack, max(4, solution_length), core.MAX_PROGRAM_LIMIT)
 
-    # Fluctuate fill level while trending a bit denser over time.
+    # Keep density oscillating in a wide band instead of trending upward.
     density_base = float(args.density)
-    density_ceiling = min(
-        68.0,
-        max(density_base + 6.0 * math.sqrt(intensity), density_base + span * 0.08 * intensity),
-    )
-    density_floor = max(8.0, density_base - (8.0 + 2.0 * (intensity - 1.0)))
-    density_trend = density_base + (density_ceiling - density_base) * (0.35 + 0.5 * effective_progress)
-    density_wave = (4.5 + 1.1 * (wave_scale - 1.0)) * math.sin(level_number * 0.59 + 2.3) + (
-        2.0 + 0.6 * (wave_scale - 1.0)
+    density_range = 11.0 + 3.0 * math.sqrt(intensity)
+    density_floor = max(8.0, density_base - density_range)
+    density_ceiling = min(68.0, density_base + density_range)
+    density_wave = (6.0 + 1.4 * (wave_scale - 1.0)) * math.sin(level_number * 0.59 + 2.3) + (
+        3.0 + 0.8 * (wave_scale - 1.0)
     ) * math.sin(level_number * 0.17 + 0.8)
-    density_noise = level_rng.uniform(-1.8, 1.8) * (1.0 + 0.3 * (wave_scale - 1.0))
-    density_percent = clamp_float(density_trend + density_wave + density_noise, density_floor, density_ceiling)
+    density_noise = level_rng.uniform(-2.4, 2.4) * (1.0 + 0.35 * (wave_scale - 1.0))
+    density_percent = clamp_float(density_base + density_wave + density_noise, density_floor, density_ceiling)
 
     # Give larger/longer levels a higher execution budget.
     execution_scale = 1.0 + 0.35 * (intensity - 1.0)
