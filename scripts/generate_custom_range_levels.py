@@ -163,6 +163,7 @@ def build_solution_payload(
             "max_attempts": options.max_attempts,
             "max_straight_run": options.max_straight_run,
             "min_direction_types_to_exit_required": options.min_direction_types_to_exit,
+            "min_steps_size_factor": options.min_steps_size_factor,
             "seal_unreachable": seal_unreachable,
             "sealed_unreachable_cells": sealed_unreachable_cells,
             "elim_from_solution_steps": elim_from_solution_steps,
@@ -252,6 +253,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Minimum distinct movement directions required to escape (1-4, default: 3).",
     )
     parser.add_argument(
+        "--min-steps-size-factor",
+        type=float,
+        default=0.6,
+        help=(
+            "Scale factor used in min-step threshold: "
+            "max(10, floor((width+height)*factor)) (default: 0.6)."
+        ),
+    )
+    parser.add_argument(
         "--seal-unreachable",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -327,6 +337,9 @@ def main(argv: list[str]) -> int:
     if args.min_direction_types_to_exit < 1 or args.min_direction_types_to_exit > 4:
         print("Error: --min-direction-types-to-exit must be between 1 and 4.", file=sys.stderr)
         return 2
+    if not math.isfinite(args.min_steps_size_factor) or args.min_steps_size_factor < 0:
+        print("Error: --min-steps-size-factor must be a finite number >= 0.", file=sys.stderr)
+        return 2
 
     if args.seed is None:
         args.seed = random.SystemRandom().randrange(0, 2**63)
@@ -352,6 +365,7 @@ def main(argv: list[str]) -> int:
         "max_solution_length": args.max_solution_length,
         "solution_cycles": args.solution_cycles,
         "solution_phase": args.solution_phase,
+        "min_steps_size_factor": args.min_steps_size_factor,
     }
 
     print(
@@ -360,6 +374,7 @@ def main(argv: list[str]) -> int:
         f"size={args.min_size}->{args.max_size}, density={args.min_density:.1f}%..{args.max_density:.1f}%, "
         f"solution_len={args.min_solution_length}..{args.max_solution_length}, "
         f"generation_elim={args.generation_execution_limit}, max_attempts={max_attempts_text}, "
+        f"min_steps_size_factor={args.min_steps_size_factor}, "
         f"seal_unreachable={'on' if args.seal_unreachable else 'off'}, "
         f"elim_from_solution_steps={'on' if args.elim_from_solution_steps else 'off'})"
     )
@@ -401,6 +416,7 @@ def main(argv: list[str]) -> int:
             max_attempts=args.max_attempts,
             max_straight_run=args.max_straight_run,
             min_direction_types_to_exit=args.min_direction_types_to_exit,
+            min_steps_size_factor=args.min_steps_size_factor,
         )
 
         if args.verbose:
@@ -410,7 +426,8 @@ def main(argv: list[str]) -> int:
                 f"target_sol={target_solution_len}, plim={target_solution_len}, "
                 f"elim={options.execution_limit}, max_attempts={max_attempts_text}, "
                 f"max_straight_run={options.max_straight_run}, "
-                f"min_direction_types_to_exit={options.min_direction_types_to_exit}"
+                f"min_direction_types_to_exit={options.min_direction_types_to_exit}, "
+                f"min_steps_size_factor={options.min_steps_size_factor}"
             )
 
         level_seed = batch_rng.randrange(0, 2**63)

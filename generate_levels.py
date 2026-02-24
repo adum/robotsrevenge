@@ -107,6 +107,7 @@ def choose_level_options(
             max_attempts=args.max_attempts,
             max_straight_run=args.max_straight_run,
             min_direction_types_to_exit=args.min_direction_types_to_exit,
+            min_steps_size_factor=args.min_steps_size_factor,
         )
 
     # Keep progression smooth at high intensity; avoid saturating by level 2.
@@ -230,6 +231,7 @@ def choose_level_options(
         max_attempts=max_attempts,
         max_straight_run=args.max_straight_run,
         min_direction_types_to_exit=args.min_direction_types_to_exit,
+        min_steps_size_factor=args.min_steps_size_factor,
     )
 
 
@@ -312,6 +314,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Minimum distinct movement directions (N/E/S/W) required for any movement-only "
             "escape path (1-4, default: 3)."
+        ),
+    )
+    parser.add_argument(
+        "--min-steps-size-factor",
+        type=float,
+        default=0.6,
+        help=(
+            "Scale factor used in min-step threshold: "
+            "max(10, floor((width+height)*factor)) (default: 0.6)."
         ),
     )
     parser.add_argument(
@@ -466,6 +477,7 @@ def build_solution_payload(
             "max_attempts": options.max_attempts,
             "max_straight_run": options.max_straight_run,
             "min_direction_types_to_exit_required": options.min_direction_types_to_exit,
+            "min_steps_size_factor": options.min_steps_size_factor,
         },
         "created_at": timestamp_now_utc(),
     }
@@ -557,6 +569,9 @@ def main(argv: list[str]) -> int:
     if args.min_direction_types_to_exit < 1 or args.min_direction_types_to_exit > 4:
         print("Error: --min-direction-types-to-exit must be between 1 and 4.", file=sys.stderr)
         return 2
+    if not math.isfinite(args.min_steps_size_factor) or args.min_steps_size_factor < 0:
+        print("Error: --min-steps-size-factor must be a finite number >= 0.", file=sys.stderr)
+        return 2
     if args.level_seed_retries < 0:
         print("Error: --level-seed-retries must be >= 0.", file=sys.stderr)
         return 2
@@ -597,6 +612,7 @@ def main(argv: list[str]) -> int:
         f"intensity={args.progressive_intensity}, progressive_max_size={args.progressive_max_size}, "
         f"progressive_reference={progressive_reference_start_level}..{progressive_reference_max_level}, "
         f"max_straight_run={args.max_straight_run}, min_direction_types_to_exit={args.min_direction_types_to_exit}, "
+        f"min_steps_size_factor={args.min_steps_size_factor}, "
         f"best_of={args.best_of}, reject_codes={'on' if args.show_reject_codes else 'off'}, "
         f"seal_unreachable={'on' if args.seal_unreachable else 'off'}, "
         f"elim_from_solution_steps={'on' if args.elim_from_solution_steps else 'off'}, "
@@ -678,6 +694,7 @@ def main(argv: list[str]) -> int:
                     f"max_attempts={'inf' if candidate_options.max_attempts == 0 else candidate_options.max_attempts}, "
                     f"max_straight_run={candidate_options.max_straight_run}, "
                     f"min_direction_types_to_exit={candidate_options.min_direction_types_to_exit}, "
+                    f"min_steps_size_factor={candidate_options.min_steps_size_factor}, "
                     f"best_of={args.best_of}"
                 )
                 constraints_announced = True
@@ -746,7 +763,8 @@ def main(argv: list[str]) -> int:
             f"elim={generated.level.execution_limit}, seed_tries={seed_tries_used}, best_of={len(candidate_pool)}/{args.best_of}, "
             f"attempts={generated.attempts_used}, sealed_unreachable={sealed_unreachable_cells}, "
             f"solution_steps={generated.solution_steps}, min_moves_to_exit={generated.min_moves_to_exit}, "
-            f"min_direction_types_to_exit={generated.min_direction_types_to_exit})"
+            f"min_direction_types_to_exit={generated.min_direction_types_to_exit}, "
+            f"min_steps_size_factor={options.min_steps_size_factor})"
         )
 
     return 0

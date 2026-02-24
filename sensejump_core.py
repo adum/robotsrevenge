@@ -65,6 +65,7 @@ class GenerateOptions:
     max_attempts: int = 650
     max_straight_run: int = 10
     min_direction_types_to_exit: int = 3
+    min_steps_size_factor: float = 0.6
 
 
 @dataclass
@@ -1117,7 +1118,10 @@ def _try_generate_level(
     if trace is None:
         return None, "ct"
 
-    min_interesting_steps = max(10, math.floor((options.width + options.height) * 0.75))
+    min_interesting_steps = max(
+        10,
+        math.floor((options.width + options.height) * options.min_steps_size_factor),
+    )
     if trace.steps < min_interesting_steps:
         return None, "ms"
     if trace.jump_exec_count == 0 or trace.sense_exec_count == 0:
@@ -1212,6 +1216,8 @@ def generate_level(
         raise ValueError("max_straight_run must be >= 0")
     if options.min_direction_types_to_exit < 1 or options.min_direction_types_to_exit > 4:
         raise ValueError("min_direction_types_to_exit must be between 1 and 4")
+    if not math.isfinite(options.min_steps_size_factor) or options.min_steps_size_factor < 0:
+        raise ValueError("min_steps_size_factor must be a finite number >= 0")
 
     random_source = rng or random.Random()
     attempt = 0

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import sys
 from datetime import datetime, timezone
@@ -135,6 +136,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--min-steps-size-factor",
+        type=float,
+        default=0.6,
+        help=(
+            "Scale factor used in min-step threshold: "
+            "max(10, floor((width+height)*factor)) (default: 0.6)."
+        ),
+    )
+    parser.add_argument(
         "--seal-unreachable",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -209,6 +219,7 @@ def build_solution_payload(
             "max_attempts": options.max_attempts,
             "max_straight_run": options.max_straight_run,
             "min_direction_types_to_exit_required": options.min_direction_types_to_exit,
+            "min_steps_size_factor": options.min_steps_size_factor,
         },
         "created_at": timestamp_now_utc(),
     }
@@ -257,6 +268,9 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         program_limit = args.solution_length
+    if not math.isfinite(args.min_steps_size_factor) or args.min_steps_size_factor < 0:
+        print("Error: --min-steps-size-factor must be a finite number >= 0.", file=sys.stderr)
+        return 2
 
     density = args.density / 100.0
     options = core.GenerateOptions(
@@ -269,6 +283,7 @@ def main(argv: list[str]) -> int:
         max_attempts=args.max_attempts,
         max_straight_run=args.max_straight_run,
         min_direction_types_to_exit=args.min_direction_types_to_exit,
+        min_steps_size_factor=args.min_steps_size_factor,
     )
     max_attempts_text = "inf" if options.max_attempts == 0 else str(options.max_attempts)
     show_live_progress = args.verbose and sys.stdout.isatty()
@@ -286,7 +301,8 @@ def main(argv: list[str]) -> int:
             f"elim={options.execution_limit}, "
             f"max_attempts={max_attempts_text}, "
             f"max_straight_run={options.max_straight_run}, "
-            f"min_direction_types_to_exit={options.min_direction_types_to_exit}"
+            f"min_direction_types_to_exit={options.min_direction_types_to_exit}, "
+            f"min_steps_size_factor={options.min_steps_size_factor}"
         )
 
     def progress_callback(attempt: int, max_attempts: int, status: str) -> None:
@@ -328,6 +344,7 @@ def main(argv: list[str]) -> int:
             f"(attempts={generated.attempts_used}, solution_steps={generated.solution_steps}, "
             f"min_moves_to_exit={generated.min_moves_to_exit}, "
             f"min_direction_types_to_exit={generated.min_direction_types_to_exit}, "
+            f"min_steps_size_factor={options.min_steps_size_factor}, "
             f"rejects={format_reject_counts(reject_counts)})"
         )
 
