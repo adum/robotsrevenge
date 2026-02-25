@@ -728,6 +728,84 @@ def build_board(
     return board
 
 
+def checkerboard_2x2_count(board: list[list[bool]]) -> int:
+    height = len(board)
+    width = len(board[0]) if height else 0
+    if width < 2 or height < 2:
+        return 0
+    count = 0
+    for y in range(height - 1):
+        for x in range(width - 1):
+            a = board[y][x]
+            b = board[y][x + 1]
+            c = board[y + 1][x]
+            d = board[y + 1][x + 1]
+            if a == d and b == c and a != b:
+                count += 1
+    return count
+
+
+def local_checkerboard_2x2_count(board: list[list[bool]], x: int, y: int) -> int:
+    height = len(board)
+    width = len(board[0]) if height else 0
+    count = 0
+    for y0 in (y - 1, y):
+        for x0 in (x - 1, x):
+            if x0 < 0 or y0 < 0 or x0 + 1 >= width or y0 + 1 >= height:
+                continue
+            a = board[y0][x0]
+            b = board[y0][x0 + 1]
+            c = board[y0 + 1][x0]
+            d = board[y0 + 1][x0 + 1]
+            if a == d and b == c and a != b:
+                count += 1
+    return count
+
+
+def apply_texture_cleanup(
+    board: list[list[bool]],
+    requirements: dict[tuple[int, int], bool],
+    start_x: int,
+    start_y: int,
+    attempts: int,
+    rng: random.Random,
+) -> int:
+    if attempts <= 0:
+        return 0
+    height = len(board)
+    width = len(board[0]) if height else 0
+    if width < 2 or height < 2:
+        return 0
+
+    fixed: set[tuple[int, int]] = set()
+    for x, y in requirements:
+        if core.in_bounds(x, y, width, height):
+            fixed.add((x, y))
+    fixed.add((start_x, start_y))
+
+    mutable_cells = [
+        (x, y)
+        for y in range(height)
+        for x in range(width)
+        if (x, y) not in fixed
+    ]
+    if not mutable_cells:
+        return 0
+
+    flips_applied = 0
+    for _ in range(attempts):
+        x, y = mutable_cells[rng.randrange(0, len(mutable_cells))]
+        before = local_checkerboard_2x2_count(board, x, y)
+        original = board[y][x]
+        board[y][x] = not original
+        after = local_checkerboard_2x2_count(board, x, y)
+        if after < before:
+            flips_applied += 1
+        else:
+            board[y][x] = original
+    return flips_applied
+
+
 def simulate_with_trace(
     level: core.Level,
     program: list[core.Instruction],
@@ -907,6 +985,9 @@ def build_solution_payload(
     generation_execution_limit: int,
     generator_attempts: int,
     sealed_unreachable_cells: int,
+    texture_cleanup_attempts: int,
+    texture_flips_applied: int,
+    checkerboard_2x2: int,
     density_driver_percent: float,
     target_density_percent: float,
     final_density_percent: float,
@@ -943,6 +1024,9 @@ def build_solution_payload(
             "sense_false": sense_false,
             "jump_exec_count": jump_exec_count,
             "sealed_unreachable_cells": sealed_unreachable_cells,
+            "texture_cleanup_attempts": texture_cleanup_attempts,
+            "texture_flips_applied": texture_flips_applied,
+            "checkerboard_2x2": checkerboard_2x2,
             "density_driver_percent": round(density_driver_percent, 2),
             "target_density_percent": round(target_density_percent, 2),
             "final_density_percent": round(final_density_percent, 2),
@@ -1157,6 +1241,33 @@ def build_parser() -> argparse.ArgumentParser:
             "(use --no-seal-unreachable to disable, default: true)."
         ),
     )
+    parser.add_argument(
+        "--texture-cleanup",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Apply checkerboard-reduction cleanup flips to non-required cells "
+            "before validation (use --no-texture-cleanup to disable, default: true)."
+        ),
+    )
+    parser.add_argument(
+        "--texture-cleanup-attempts",
+        type=int,
+        default=0,
+        help=(
+            "Number of local flip attempts for texture cleanup "
+            "(0 = auto from size and scale, default: 0)."
+        ),
+    )
+    parser.add_argument(
+        "--texture-cleanup-scale",
+        type=float,
+        default=0.05,
+        help=(
+            "Auto cleanup attempts scale: round(width*height*scale) "
+            "when --texture-cleanup-attempts is 0 (default: 0.05)."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=None, help="Batch seed (default: random).")
     parser.add_argument(
         "--verbose",
@@ -1246,6 +1357,12 @@ def main(argv: list[str]) -> int:
     if args.candidate_attempts > 0 and args.best_of > args.candidate_attempts:
         print("Error: --best-of cannot exceed --candidate-attempts when finite.", file=sys.stderr)
         return 2
+    if args.texture_cleanup_attempts < 0:
+        print("Error: --texture-cleanup-attempts must be >= 0.", file=sys.stderr)
+        return 2
+    if args.texture_cleanup_scale < 0.0:
+        print("Error: --texture-cleanup-scale must be >= 0.", file=sys.stderr)
+        return 2
 
     if args.progressive_total_levels is None:
         args.progressive_total_levels = args.max_level
@@ -1274,7 +1391,8 @@ def main(argv: list[str]) -> int:
         f"(scale={args.reachable_open_scale:.2f}), best_of={args.best_of}, "
         f"candidate_attempts={max_attempts_text}, min_solution_dir_types={args.min_solution_direction_types}, "
         f"min_exit_dir_types={args.min_direction_types_to_exit}, elim_from_solution_steps={'on' if args.elim_from_solution_steps else 'off'}, "
-        f"seal_unreachable={'on' if args.seal_unreachable else 'off'})"
+        f"seal_unreachable={'on' if args.seal_unreachable else 'off'}, "
+        f"texture_cleanup={'on' if args.texture_cleanup else 'off'})"
     )
 
     series_config = {
@@ -1305,6 +1423,9 @@ def main(argv: list[str]) -> int:
         "min_solution_direction_types": args.min_solution_direction_types,
         "min_direction_types_to_exit": args.min_direction_types_to_exit,
         "max_straight_run": args.max_straight_run,
+        "texture_cleanup": args.texture_cleanup,
+        "texture_cleanup_attempts": args.texture_cleanup_attempts,
+        "texture_cleanup_scale": args.texture_cleanup_scale,
     }
 
     for level_number in range(args.start_level, args.max_level + 1):
@@ -1330,7 +1451,8 @@ def main(argv: list[str]) -> int:
                 f"min_steps={min_steps_required}, min_visited={min_visited_required}, "
                 f"min_spread={args.min_route_spread:.2f}, min_solution_dir_types={args.min_solution_direction_types}, "
                 f"min_exit_dir_types={args.min_direction_types_to_exit}, best_of={args.best_of}, "
-                f"candidate_attempts={max_attempts_text}"
+                f"candidate_attempts={max_attempts_text}, "
+                f"texture_cleanup={'on' if args.texture_cleanup else 'off'}"
             )
 
         while len(candidate_pool) < args.best_of and (
@@ -1425,6 +1547,23 @@ def main(argv: list[str]) -> int:
                 reject_counts["dn"] = reject_counts.get("dn", 0) + 1
                 continue
 
+            texture_cleanup_attempts_used = 0
+            texture_flips_applied = 0
+            if args.texture_cleanup:
+                texture_cleanup_attempts_used = (
+                    args.texture_cleanup_attempts
+                    if args.texture_cleanup_attempts > 0
+                    else max(1, int(round((size * size) * args.texture_cleanup_scale)))
+                )
+                texture_flips_applied = apply_texture_cleanup(
+                    board=board,
+                    requirements=trace.requirements,
+                    start_x=start_x,
+                    start_y=start_y,
+                    attempts=texture_cleanup_attempts_used,
+                    rng=rng,
+                )
+
             program_limit = clamp_int(
                 len(program) + args.program_slack,
                 len(program),
@@ -1515,6 +1654,7 @@ def main(argv: list[str]) -> int:
                     continue
 
             final_density_percent = 100.0 * core.block_count(level.board) / float(size * size)
+            checkerboard_2x2 = checkerboard_2x2_count(level.board)
 
             if args.elim_from_solution_steps:
                 level.execution_limit = max(1, run_result.steps)
@@ -1552,6 +1692,9 @@ def main(argv: list[str]) -> int:
                     "jump_exec_count": trace.jump_exec_count,
                     "generation_execution_limit": generation_execution_limit,
                     "sealed_unreachable_cells": sealed_unreachable_cells,
+                    "texture_cleanup_attempts": texture_cleanup_attempts_used,
+                    "texture_flips_applied": texture_flips_applied,
+                    "checkerboard_2x2": checkerboard_2x2,
                     "density_driver_percent": density_percent,
                     "target_density_percent": target_final_density_percent,
                     "final_density_percent": final_density_percent,
@@ -1601,6 +1744,9 @@ def main(argv: list[str]) -> int:
         jump_exec_count = int(chosen["jump_exec_count"])
         generation_execution_limit = int(chosen["generation_execution_limit"])
         sealed_unreachable_cells = int(chosen["sealed_unreachable_cells"])
+        texture_cleanup_attempts = int(chosen["texture_cleanup_attempts"])
+        texture_flips_applied = int(chosen["texture_flips_applied"])
+        checkerboard_2x2 = int(chosen["checkerboard_2x2"])
         density_driver_percent = float(chosen["density_driver_percent"])
         target_density_percent = float(chosen["target_density_percent"])
         final_density_percent = float(chosen["final_density_percent"])
@@ -1630,6 +1776,9 @@ def main(argv: list[str]) -> int:
             generation_execution_limit=generation_execution_limit,
             generator_attempts=generator_attempts,
             sealed_unreachable_cells=sealed_unreachable_cells,
+            texture_cleanup_attempts=texture_cleanup_attempts,
+            texture_flips_applied=texture_flips_applied,
+            checkerboard_2x2=checkerboard_2x2,
             density_driver_percent=density_driver_percent,
             target_density_percent=target_density_percent,
             final_density_percent=final_density_percent,
@@ -1653,6 +1802,7 @@ def main(argv: list[str]) -> int:
             f"spread={spread_ratio:.3f}, direction_types_used={direction_types_used}, "
             f"density_driver={density_driver_percent:.1f}%, "
             f"density_target={target_density_percent:.1f}%, density_final={final_density_percent:.1f}%, "
+            f"cb2x2={checkerboard_2x2}, texture_flips={texture_flips_applied}/{texture_cleanup_attempts}, "
             f"min_moves_to_exit={min_moves_to_exit}, min_direction_types_to_exit={min_direction_types_to_exit}, "
             f"blueprint_states={blueprint_states}, "
             f"sealed_unreachable={sealed_unreachable_cells}, score={score:.1f})"
