@@ -123,6 +123,24 @@
               <button id="showSolutionBtn" class="secondary" title="Load the generated hidden solver into the program editor.">Load Hidden Solver</button>
               <button id="loadLevelBtn" class="secondary" title="Import a .level file from disk.">Load Level</button>
             </div>
+            <div class="control">
+              <label>Board Editing Mode</label>
+              <div class="button-row dual">
+                <button id="playModeBtn" class="secondary" title="Normal play mode: board clicks do not edit blocks.">Play Mode</button>
+                <button id="designModeBtn" class="secondary" title="Design mode: click board cells to toggle blocks.">Design Mode</button>
+              </div>
+            </div>
+            <div class="button-row">
+              <button id="newDesignLevelBtn" class="secondary" title="Create a blank square board using the current Size value for manual level design.">New Blank Level</button>
+            </div>
+            <div class="control">
+              <label>Brute Force Solver</label>
+              <div class="button-row dual">
+                <button id="bruteForceStartBtn" class="secondary" title="Try all programs from length 1 upward until one escapes or the search is stopped.">Start Search</button>
+                <button id="bruteForceStopBtn" class="secondary" title="Stop the brute-force search.">Stop</button>
+              </div>
+              <div id="bruteForceMeta" class="summary brute-force-meta">Idle.</div>
+            </div>
             <input id="loadLevelInput" type="file" accept=".level,text/plain" hidden />
           </section>
         </aside>

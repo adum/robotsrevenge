@@ -182,6 +182,12 @@ button.secondary {
   background: #fff;
 }
 
+button.mode-active {
+  color: #fff;
+  background: var(--lime);
+  border-color: var(--lime-dark);
+}
+
 .turn-btn {
   font-size: 20px;
   font-weight: 700;
@@ -192,6 +198,10 @@ button.secondary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.button-row.dual {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .button-row.triple {
@@ -413,6 +423,12 @@ button.secondary {
   font-weight: 700;
 }
 
+.brute-force-meta {
+  min-height: 64px;
+  font-size: 11px;
+  white-space: pre-line;
+}
+
 .arena {
   background: var(--panel);
   border: 2px solid var(--ink);
@@ -489,6 +505,14 @@ button.secondary {
   border-radius: 4px;
   background: #fff9eb;
   position: relative;
+}
+
+.board.editable .cell {
+  cursor: pointer;
+}
+
+.board.editable .cell:hover {
+  box-shadow: inset 0 0 0 2px rgba(47, 125, 88, 0.35);
 }
 
 .cell.blocked {

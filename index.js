@@ -27,6 +27,12 @@ const generateBtn = document.getElementById("generateBtn");
 const showSolutionBtn = document.getElementById("showSolutionBtn");
 const loadLevelBtn = document.getElementById("loadLevelBtn");
 const loadLevelInput = document.getElementById("loadLevelInput");
+const playModeBtn = document.getElementById("playModeBtn");
+const designModeBtn = document.getElementById("designModeBtn");
+const newDesignLevelBtn = document.getElementById("newDesignLevelBtn");
+const bruteForceStartBtn = document.getElementById("bruteForceStartBtn");
+const bruteForceStopBtn = document.getElementById("bruteForceStopBtn");
+const bruteForceMetaEl = document.getElementById("bruteForceMeta");
 const addFBtn = document.getElementById("addFBtn");
 const addLBtn = document.getElementById("addLBtn");
 const addRBtn = document.getElementById("addRBtn");
@@ -70,6 +76,24 @@ const state = {
   programLimit: 14,
   maxSteps: 420,
   cells: [],
+  designMode: false,
+  bruteForce: {
+    running: false,
+    stopRequested: false,
+    length: 1,
+    maxLength: 1,
+    tokens: [],
+    digits: [],
+    triedInLength: 0n,
+    totalAttempts: 0n,
+    totalForLength: 0n,
+    startedAtMs: 0,
+    lastRateAtMs: 0,
+    lastRateAttempts: 0n,
+    ratePerSecond: 0,
+    chunkSize: 1200,
+    timer: null,
+  },
 };
 
 function clamp(value, min, max) {
@@ -169,6 +193,259 @@ function blockCount(board) {
     }
   }
   return count;
+}
+
+function formatBigInt(value) {
+  const text = value.toString();
+  return text.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+function updateDesignModeUI() {
+  playModeBtn.classList.toggle("mode-active", !state.designMode);
+  designModeBtn.classList.toggle("mode-active", state.designMode);
+  boardEl.classList.toggle("editable", state.designMode);
+}
+
+function setDesignMode(enabled) {
+  state.designMode = !!enabled;
+  updateDesignModeUI();
+}
+
+function createBlankDesignedLevel() {
+  stopAutoRun();
+  stopBruteForceSearch(false);
+
+  const size = parseInt(sizeRange.value, 10);
+  const width = clamp(Number.isFinite(size) ? size : state.width, 2, 256);
+  const height = width;
+
+  state.width = width;
+  state.height = height;
+  state.board = Array.from({ length: height }, () => Array.from({ length: width }, () => false));
+  state.start = {
+    x: Math.floor(width / 2),
+    y: Math.floor(height / 2),
+    dir: NORTH_DIR,
+  };
+  state.hiddenSolution = [];
+  state.programLimit = clamp(parseInt(progLimitRange.value, 10), 4, MAX_PROGRAM_LIMIT);
+  state.maxSteps = Math.max(1, parseInt(maxStepsRange.value, 10));
+  state.userProgram = [];
+  state.selectedProgramIndex = -1;
+
+  fitPairToValue(sizeRange, sizeNumber, width);
+  fitPairToValue(progLimitRange, progLimitNumber, state.programLimit);
+  fitPairToValue(maxStepsRange, maxStepsNumber, state.maxSteps);
+  if (parseInt(solLenRange.value, 10) > state.programLimit) {
+    assignPairValue(solLenRange, solLenNumber, state.programLimit);
+  }
+
+  buildBoardNodes();
+  resetRun(false);
+  setDesignMode(true);
+  updateLevelMeta();
+  saveGeneratorSettings();
+  setStatus(`Design mode enabled. Created blank ${width}x${height} board.`, "ok");
+}
+
+function buildBruteForceTokens(length) {
+  const tokens = [
+    { op: "F", arg: 1 },
+    { op: "L", arg: 1 },
+    { op: "R", arg: 1 },
+    { op: "S", arg: 1 },
+  ];
+
+  if (length <= 1) {
+    return tokens;
+  }
+
+  for (let distance = 1; distance < length; distance += 1) {
+    const offsets = [distance, -distance];
+    for (const offset of offsets) {
+      const effective = wrap(offset, length);
+      if (effective === 0 || effective === 1) {
+        continue;
+      }
+      tokens.push({ op: "J", arg: offset });
+    }
+  }
+  return tokens;
+}
+
+function incrementBruteForceDigits(digits, base) {
+  if (base <= 0 || digits.length === 0) {
+    return false;
+  }
+  for (let i = digits.length - 1; i >= 0; i -= 1) {
+    digits[i] += 1;
+    if (digits[i] < base) {
+      return true;
+    }
+    digits[i] = 0;
+  }
+  return false;
+}
+
+function currentBruteForceProgram() {
+  const solver = state.bruteForce;
+  const program = new Array(solver.length);
+  for (let i = 0; i < solver.length; i += 1) {
+    program[i] = solver.tokens[solver.digits[i]];
+  }
+  return program;
+}
+
+function refreshBruteForceMeta(extraLine) {
+  const solver = state.bruteForce;
+  if (!solver.running && !extraLine) {
+    bruteForceMetaEl.textContent = "Idle.";
+    return;
+  }
+  const elapsedMs = solver.startedAtMs > 0 ? Math.max(1, performance.now() - solver.startedAtMs) : 0;
+  const elapsedSec = elapsedMs / 1000;
+  const averageRate = elapsedSec > 0 ? Number(solver.totalAttempts) / elapsedSec : solver.ratePerSecond;
+  const percent = solver.totalForLength > 0n
+    ? Math.floor(Number((solver.triedInLength * 10000n) / solver.totalForLength)) / 100
+    : 0;
+  const lines = [
+    `Length: ${solver.length} / ${solver.maxLength}`,
+    `Tried this length: ${formatBigInt(solver.triedInLength)} / ${formatBigInt(solver.totalForLength)} (${percent.toFixed(2)}%)`,
+    `Total tried: ${formatBigInt(solver.totalAttempts)} | Rate: ${solver.ratePerSecond.toFixed(0)}/s avg ${averageRate.toFixed(0)}/s`,
+  ];
+  if (extraLine) {
+    lines.push(extraLine);
+  }
+  bruteForceMetaEl.textContent = lines.join("\n");
+}
+
+function updateBruteForceButtons() {
+  bruteForceStartBtn.disabled = state.bruteForce.running;
+  bruteForceStopBtn.disabled = !state.bruteForce.running;
+}
+
+function stopBruteForceSearch(notifyUser) {
+  const solver = state.bruteForce;
+  solver.stopRequested = true;
+  solver.running = false;
+  if (solver.timer) {
+    clearTimeout(solver.timer);
+    solver.timer = null;
+  }
+  updateBruteForceButtons();
+  if (notifyUser) {
+    setStatus("Brute-force search stopped.", "");
+  }
+  refreshBruteForceMeta(notifyUser ? "Stopped." : "");
+}
+
+function prepareBruteForceLength(length) {
+  const solver = state.bruteForce;
+  if (length > solver.maxLength) {
+    return false;
+  }
+  solver.length = length;
+  solver.tokens = buildBruteForceTokens(length);
+  solver.digits = Array.from({ length }, () => 0);
+  solver.triedInLength = 0n;
+  solver.totalForLength = BigInt(solver.tokens.length) ** BigInt(length);
+  return true;
+}
+
+function bruteForceTick() {
+  const solver = state.bruteForce;
+  if (!solver.running || solver.stopRequested) {
+    return;
+  }
+
+  const started = performance.now();
+  let chunkIterations = 0;
+  while (solver.running && !solver.stopRequested) {
+    const program = currentBruteForceProgram();
+    const result = simulateProgram(program, state.board, state.start, state.maxSteps);
+    solver.totalAttempts += 1n;
+    solver.triedInLength += 1n;
+    chunkIterations += 1;
+
+    if (result.result === "escape") {
+      solver.running = false;
+      state.userProgram = cloneProgram(program);
+      state.selectedProgramIndex = state.userProgram.length > 0 ? 0 : -1;
+      resetRun(false);
+      updateBruteForceButtons();
+      refreshBruteForceMeta(
+        `Found solution at length ${solver.length} in ${formatBigInt(solver.totalAttempts)} tries.`
+      );
+      setStatus(
+        `Brute-force found solution length ${solver.length} after ${formatBigInt(solver.totalAttempts)} tries.`,
+        "ok"
+      );
+      return;
+    }
+
+    const hasNext = incrementBruteForceDigits(solver.digits, solver.tokens.length);
+    if (!hasNext) {
+      if (!prepareBruteForceLength(solver.length + 1)) {
+        solver.running = false;
+        updateBruteForceButtons();
+        refreshBruteForceMeta(`No solution found up to length ${solver.maxLength}.`);
+        setStatus(`No solution found up to length ${solver.maxLength}.`, "bad");
+        return;
+      }
+    }
+
+    if (chunkIterations >= Math.max(1, solver.chunkSize)) {
+      break;
+    }
+    if (performance.now() - started > 16) {
+      break;
+    }
+  }
+
+  const now = performance.now();
+  const attemptsDelta = solver.totalAttempts - solver.lastRateAttempts;
+  const elapsedDelta = now - solver.lastRateAtMs;
+  if (elapsedDelta > 50) {
+    solver.ratePerSecond = (1000 * Number(attemptsDelta)) / elapsedDelta;
+    solver.lastRateAtMs = now;
+    solver.lastRateAttempts = solver.totalAttempts;
+  }
+  refreshBruteForceMeta();
+  solver.timer = setTimeout(bruteForceTick, 0);
+}
+
+function startBruteForceSearch() {
+  if (state.bruteForce.running) {
+    return;
+  }
+  if (!state.board || state.board.length === 0) {
+    setStatus("No board loaded.", "bad");
+    return;
+  }
+  stopAutoRun();
+  stopBruteForceSearch(false);
+
+  const solver = state.bruteForce;
+  solver.running = true;
+  solver.stopRequested = false;
+  solver.maxLength = clamp(state.programLimit, 1, MAX_PROGRAM_LIMIT);
+  solver.totalAttempts = 0n;
+  solver.ratePerSecond = 0;
+  solver.startedAtMs = performance.now();
+  solver.lastRateAtMs = solver.startedAtMs;
+  solver.lastRateAttempts = 0n;
+  if (!prepareBruteForceLength(1)) {
+    solver.running = false;
+    updateBruteForceButtons();
+    setStatus("Cannot start brute-force search with current limits.", "bad");
+    refreshBruteForceMeta("Invalid search bounds.");
+    return;
+  }
+
+  updateBruteForceButtons();
+  refreshBruteForceMeta("Searching...");
+  setStatus(`Brute-force search started (length 1..${solver.maxLength}).`, "");
+  solver.timer = setTimeout(bruteForceTick, 0);
 }
 
 function instructionText(inst) {
@@ -331,9 +608,13 @@ function buildBoardNodes() {
       cell.dataset.x = String(x);
       cell.dataset.y = String(y);
       cell.addEventListener("click", () => {
+        if (!state.designMode) {
+          return;
+        }
         if (x === state.start.x && y === state.start.y) {
           return;
         }
+        stopBruteForceSearch(false);
         state.board[y][x] = !state.board[y][x];
         resetRun(false);
         renderBoard();
@@ -344,6 +625,7 @@ function buildBoardNodes() {
     }
   }
   adjustBoardSize();
+  updateDesignModeUI();
 }
 
 function renderBoard() {
@@ -382,6 +664,7 @@ function adjustBoardSize() {
 
 function resetRun(keepTrail) {
   stopAutoRun();
+  stopBruteForceSearch(false);
   setArenaState(null);
   state.robot = { x: state.start.x, y: state.start.y, dir: state.start.dir };
   state.pc = 0;
@@ -570,6 +853,7 @@ function updateLevelMeta() {
     `<div><strong>Grid:</strong> ${state.width} x ${state.height}</div>` +
     `<div><strong>Blocks:</strong> ${blocked} (${ratio}%)</div>` +
     `<div><strong>Start:</strong> ${state.start.x}, ${state.start.y} (facing North)</div>` +
+    `<div><strong>Edit Mode:</strong> ${state.designMode ? "Design" : "Play"}</div>` +
     `<div><strong>Program Length Limit:</strong> ${state.programLimit}</div>` +
     `<div><strong>Execution Limit:</strong> ${state.maxSteps}</div>` +
     `<div><strong>Hidden Solver Length:</strong> ${state.hiddenSolution.length}</div>`;
@@ -1465,6 +1749,7 @@ function tryGenerateLevel(options, phase, rejectionCounts) {
 
 function generateLevel() {
   stopAutoRun();
+  stopBruteForceSearch(false);
   saveGeneratorSettings();
   setStatus("Generating...", "");
   const size = parseInt(sizeRange.value, 10);
@@ -1629,6 +1914,7 @@ bindPair(solLenRange, solLenNumber, () => {
   saveGeneratorSettings();
 });
 bindPair(progLimitRange, progLimitNumber, (value) => {
+  stopBruteForceSearch(false);
   state.programLimit = clamp(value, 4, MAX_PROGRAM_LIMIT);
   if (state.userProgram.length > state.programLimit) {
     state.userProgram = state.userProgram.slice(0, state.programLimit);
@@ -1647,6 +1933,7 @@ bindPair(progLimitRange, progLimitNumber, (value) => {
   saveGeneratorSettings();
 });
 bindPair(maxStepsRange, maxStepsNumber, (value) => {
+  stopBruteForceSearch(false);
   state.maxSteps = value;
   if (state.stepCount > state.maxSteps) {
     state.stepCount = state.maxSteps;
@@ -1667,6 +1954,19 @@ generateBtn.addEventListener("click", generateLevel);
 showSolutionBtn.addEventListener("click", loadHiddenSolution);
 loadLevelBtn.addEventListener("click", () => loadLevelInput.click());
 loadLevelInput.addEventListener("change", loadLevelFromFileInput);
+playModeBtn.addEventListener("click", () => {
+  setDesignMode(false);
+  updateLevelMeta();
+  setStatus("Play mode enabled.", "");
+});
+designModeBtn.addEventListener("click", () => {
+  setDesignMode(true);
+  updateLevelMeta();
+  setStatus("Design mode enabled. Click cells to toggle blocks.", "");
+});
+newDesignLevelBtn.addEventListener("click", createBlankDesignedLevel);
+bruteForceStartBtn.addEventListener("click", startBruteForceSearch);
+bruteForceStopBtn.addEventListener("click", () => stopBruteForceSearch(true));
 addFBtn.addEventListener("click", () => addInstruction("F"));
 addLBtn.addEventListener("click", () => addInstruction("L"));
 addRBtn.addEventListener("click", () => addInstruction("R"));
@@ -1682,9 +1982,13 @@ copyProgramBtn.addEventListener("click", copyProgramToClipboard);
 pasteProgramBtn.addEventListener("click", pasteProgramFromClipboard);
 stepBtn.addEventListener("click", () => {
   stopAutoRun();
+  stopBruteForceSearch(false);
   stepProgram();
 });
-runBtn.addEventListener("click", toggleRun);
+runBtn.addEventListener("click", () => {
+  stopBruteForceSearch(false);
+  toggleRun();
+});
 resetBtn.addEventListener("click", () => resetRun(false));
 clearTrailBtn.addEventListener("click", () => {
   state.trail.clear();
@@ -1717,12 +2021,17 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
   } else if (key === "enter") {
     stopAutoRun();
+    stopBruteForceSearch(false);
     stepProgram();
     event.preventDefault();
   } else if (key === " ") {
+    stopBruteForceSearch(false);
     toggleRun();
     event.preventDefault();
   }
 });
 
+setDesignMode(false);
+updateBruteForceButtons();
+refreshBruteForceMeta();
 generateLevel();
