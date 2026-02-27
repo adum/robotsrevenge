@@ -1,0 +1,34 @@
+{
+  "generators": [
+    { "id": "v2", "script": "scripts/generate_levels_v2.py" },
+    { "id": "v3", "script": "scripts/generate_levels_v3.py" },
+    { "id": "v4_evo", "script": "scripts/generate_levels_v4_evo.py" },
+    { "id": "v5_cegis", "script": "scripts/generate_levels_v5_cegis.py" },
+    { "id": "v5_dfs_decoy", "script": "scripts/generate_levels_v5_dfs_decoy.py" },
+    { "id": "v6_mcts", "script": "scripts/generate_levels_v6_mcts.py" },
+    { "id": "v6_weaver", "script": "scripts/generate_levels_v6_weaver.py" },
+    { "id": "v7_architect", "script": "scripts/generate_levels_v7_architect.py" },
+    { "id": "v7_mission_compiler", "script": "scripts/generate_levels_v7_mission_compiler.py" }
+  ],
+  "default_generators": [
+    "v2",
+    "v3",
+    "v4_evo",
+    "v5_cegis",
+    "v5_dfs_decoy",
+    "v6_mcts",
+    "v6_weaver",
+    "v7_architect",
+    "v7_mission_compiler"
+  ],
+  "defaults": {
+    "runs_per_generator": 1,
+    "seed_step": 1000003,
+    "out_root": "generated",
+    "curated_id": "curated",
+    "curated_run_id": "run_001",
+    "curated_levels_dir": "levels",
+    "curated_solutions_dir": "solutions",
+    "curated_copy_mode": "copy"
+  }
+}
