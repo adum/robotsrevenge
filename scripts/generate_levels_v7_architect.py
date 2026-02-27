@@ -478,7 +478,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-direction-types-to-exit", type=int, default=2, help="Min direction types needed to exit.")
     
     parser.add_argument("--best-of", type=int, default=1, help="Generate this many candidates and keep the best.")
-    parser.add_argument("--max-attempts", type=int, default=5000, help="Max generation attempts per level.")
+    parser.add_argument("--max-attempts", type=int, default=0, help="Max generation attempts per level (0 for infinite).")
     
     parser.add_argument(
         "--seal-unreachable",
@@ -552,7 +552,7 @@ def main(argv: list[str]) -> int:
         reject_counts: dict[str, int] = {}
         evals = 0
 
-        while len(candidate_pool) < args.best_of and evals < options.max_attempts:
+        while len(candidate_pool) < args.best_of and (options.max_attempts == 0 or evals < options.max_attempts):
             evals += 1
             candidate_seed = batch_rng.randrange(0, 2**63)
             rng = random.Random(candidate_seed)
