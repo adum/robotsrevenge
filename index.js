@@ -30,6 +30,9 @@ const loadLevelInput = document.getElementById("loadLevelInput");
 const playModeBtn = document.getElementById("playModeBtn");
 const designModeBtn = document.getElementById("designModeBtn");
 const newDesignLevelBtn = document.getElementById("newDesignLevelBtn");
+const copyLevelBtn = document.getElementById("copyLevelBtn");
+const pasteLevelBtn = document.getElementById("pasteLevelBtn");
+const levelClipboardBufferEl = document.getElementById("levelClipboardBuffer");
 const bruteForceStartBtn = document.getElementById("bruteForceStartBtn");
 const bruteForceStopBtn = document.getElementById("bruteForceStopBtn");
 const bruteForceMetaEl = document.getElementById("bruteForceMeta");
@@ -93,6 +96,11 @@ const state = {
     ratePerSecond: 0,
     chunkSize: 1200,
     timer: null,
+  },
+  designPaint: {
+    active: false,
+    value: false,
+    changed: false,
   },
 };
 
@@ -208,7 +216,60 @@ function updateDesignModeUI() {
 
 function setDesignMode(enabled) {
   state.designMode = !!enabled;
+  if (!state.designMode) {
+    state.designPaint.active = false;
+    state.designPaint.changed = false;
+  }
   updateDesignModeUI();
+}
+
+function applyDesignPaintCell(x, y) {
+  if (!state.designPaint.active) {
+    return;
+  }
+  if (!isInBounds(x, y)) {
+    return;
+  }
+  if (x === state.start.x && y === state.start.y) {
+    return;
+  }
+  if (state.board[y][x] === state.designPaint.value) {
+    return;
+  }
+  state.board[y][x] = state.designPaint.value;
+  state.designPaint.changed = true;
+  renderBoard();
+  updateLevelMeta();
+}
+
+function beginDesignPaint(x, y) {
+  if (!state.designMode) {
+    return;
+  }
+  if (!isInBounds(x, y)) {
+    return;
+  }
+  if (x === state.start.x && y === state.start.y) {
+    return;
+  }
+  stopBruteForceSearch(false);
+  resetRun(false);
+  state.designPaint.active = true;
+  state.designPaint.value = !state.board[y][x];
+  state.designPaint.changed = false;
+  applyDesignPaintCell(x, y);
+}
+
+function endDesignPaint() {
+  if (!state.designPaint.active) {
+    return;
+  }
+  state.designPaint.active = false;
+  if (state.designPaint.changed) {
+    updateLevelMeta();
+    setStatus("Board updated in Design mode.", "");
+  }
+  state.designPaint.changed = false;
 }
 
 function createBlankDesignedLevel() {
@@ -246,6 +307,110 @@ function createBlankDesignedLevel() {
   updateLevelMeta();
   saveGeneratorSettings();
   setStatus(`Design mode enabled. Created blank ${width}x${height} board.`, "ok");
+}
+
+function formatCurrentLevelText() {
+  const boardChars = [];
+  for (let y = 0; y < state.height; y += 1) {
+    for (let x = 0; x < state.width; x += 1) {
+      boardChars.push(state.board[y][x] ? "X" : ".");
+    }
+  }
+  const params = new URLSearchParams();
+  params.set("x", String(state.width));
+  params.set("y", String(state.height));
+  params.set("board", boardChars.join(""));
+  params.set("sx", String(state.start.x));
+  params.set("sy", String(state.start.y));
+  params.set("plim", String(state.programLimit));
+  params.set("elim", String(state.maxSteps));
+  return params.toString();
+}
+
+function focusAndSelectLevelBuffer(text) {
+  if (!levelClipboardBufferEl) {
+    return;
+  }
+  levelClipboardBufferEl.value = text;
+  levelClipboardBufferEl.focus();
+  levelClipboardBufferEl.select();
+  levelClipboardBufferEl.setSelectionRange(0, text.length);
+}
+
+async function writeClipboardText(text) {
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (error) {
+      // Fall through to legacy path.
+    }
+  }
+
+  try {
+    focusAndSelectLevelBuffer(text);
+    const ok = document.execCommand("copy");
+    if (!ok) {
+      throw new Error("copy_failed");
+    }
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+async function readClipboardText() {
+  if (navigator.clipboard && typeof navigator.clipboard.readText === "function") {
+    try {
+      return await navigator.clipboard.readText();
+    } catch (error) {
+      // Fall through to buffer/prompt fallback.
+    }
+  }
+  if (levelClipboardBufferEl && levelClipboardBufferEl.value.trim()) {
+    return levelClipboardBufferEl.value;
+  }
+  return "";
+}
+
+async function copyLevelToClipboard() {
+  if (!state.board || state.board.length === 0) {
+    setStatus("No board to copy.", "bad");
+    return;
+  }
+  const text = formatCurrentLevelText();
+  focusAndSelectLevelBuffer(text);
+  const copied = await writeClipboardText(text);
+  if (copied) {
+    setStatus(`Copied level ${state.width}x${state.height} to clipboard.`, "ok");
+    return;
+  }
+  setStatus("Clipboard blocked. Level text is in the buffer box; press Ctrl+C.", "bad");
+}
+
+async function pasteLevelFromClipboard() {
+  let rawText = await readClipboardText();
+  if (!rawText || !rawText.trim()) {
+    const pasted = window.prompt("Paste level text:");
+    if (!pasted || !String(pasted).trim()) {
+      setStatus("No level text provided.", "bad");
+      return;
+    }
+    rawText = String(pasted);
+  }
+
+  try {
+    const loaded = parseLevelText(rawText);
+    if (levelClipboardBufferEl) {
+      levelClipboardBufferEl.value = rawText;
+    }
+    applyLoadedLevel(loaded);
+    setDesignMode(true);
+    updateLevelMeta();
+    setStatus(`Pasted level ${loaded.width}x${loaded.height} into Design mode.`, "ok");
+  } catch (error) {
+    setStatus(`Could not paste level: ${error.message || error}`, "bad");
+  }
 }
 
 function buildBruteForceTokens(length) {
@@ -607,18 +772,21 @@ function buildBoardNodes() {
       cell.className = "cell";
       cell.dataset.x = String(x);
       cell.dataset.y = String(y);
-      cell.addEventListener("click", () => {
+      cell.addEventListener("pointerdown", (event) => {
         if (!state.designMode) {
           return;
         }
-        if (x === state.start.x && y === state.start.y) {
+        if (event.pointerType === "mouse" && event.button !== 0) {
           return;
         }
-        stopBruteForceSearch(false);
-        state.board[y][x] = !state.board[y][x];
-        resetRun(false);
-        renderBoard();
-        updateLevelMeta();
+        event.preventDefault();
+        beginDesignPaint(x, y);
+      });
+      cell.addEventListener("pointerenter", () => {
+        if (!state.designPaint.active) {
+          return;
+        }
+        applyDesignPaintCell(x, y);
       });
       state.cells.push(cell);
       boardEl.appendChild(cell);
@@ -1965,6 +2133,8 @@ designModeBtn.addEventListener("click", () => {
   setStatus("Design mode enabled. Click cells to toggle blocks.", "");
 });
 newDesignLevelBtn.addEventListener("click", createBlankDesignedLevel);
+copyLevelBtn.addEventListener("click", copyLevelToClipboard);
+pasteLevelBtn.addEventListener("click", pasteLevelFromClipboard);
 bruteForceStartBtn.addEventListener("click", startBruteForceSearch);
 bruteForceStopBtn.addEventListener("click", () => stopBruteForceSearch(true));
 addFBtn.addEventListener("click", () => addInstruction("F"));
@@ -1996,6 +2166,9 @@ clearTrailBtn.addEventListener("click", () => {
 });
 
 window.addEventListener("resize", adjustBoardSize);
+window.addEventListener("pointerup", endDesignPaint);
+window.addEventListener("pointercancel", endDesignPaint);
+window.addEventListener("blur", endDesignPaint);
 window.addEventListener("keydown", (event) => {
   if (event.target && ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(event.target.tagName)) {
     return;

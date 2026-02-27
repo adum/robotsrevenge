@@ -86,8 +86,8 @@
             <div class="control">
               <label for="sizeRange">Size (Square)</label>
               <div class="pair">
-                <input type="range" id="sizeRange" min="6" max="18" value="11" />
-                <input type="number" id="sizeNumber" min="6" max="18" value="11" />
+                <input type="range" id="sizeRange" min="5" max="18" value="11" />
+                <input type="number" id="sizeNumber" min="5" max="18" value="11" />
               </div>
             </div>
             <div class="control">
@@ -133,6 +133,18 @@
             <div class="button-row">
               <button id="newDesignLevelBtn" class="secondary" title="Create a blank square board using the current Size value for manual level design.">New Blank Level</button>
             </div>
+            <div class="button-row dual">
+              <button id="copyLevelBtn" class="secondary" title="Copy the current board as .level text to the clipboard.">Copy Level</button>
+              <button id="pasteLevelBtn" class="secondary" title="Paste .level text from the clipboard into the board editor.">Paste Level</button>
+            </div>
+            <textarea
+              id="levelClipboardBuffer"
+              class="level-clipboard-buffer"
+              rows="3"
+              spellcheck="false"
+              placeholder="Level text buffer (used as copy/paste fallback)."
+              title="If clipboard permissions are blocked, copy/paste level text manually here."
+            ></textarea>
             <div class="control">
               <label>Brute Force Solver</label>
               <div class="button-row dual">
