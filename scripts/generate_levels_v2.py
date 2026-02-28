@@ -626,6 +626,8 @@ def main(argv: list[str]) -> int:
         "max_route_cells": args.max_route_cells,
     }
 
+    failed_levels: list[tuple[int, int, str]] = []
+
     for level_offset, level_number in enumerate(range(args.start_level, args.max_level + 1)):
         size = choose_size(level_offset, level_count, args)
         target_program_length = choose_target_program_length(level_offset, level_count, args, batch_rng)
@@ -798,13 +800,15 @@ def main(argv: list[str]) -> int:
         clear_progress_line(progress_width, show_live_progress)
 
         if len(candidate_pool) < args.best_of:
+            reject_summary = format_reject_counts(reject_counts)
             print(
                 f"Error generating level {level_number}: found {len(candidate_pool)}/{args.best_of} "
                 f"valid candidates after {attempts_used} attempts "
-                f"(rejects: {format_reject_counts(reject_counts)}).",
+                f"(rejects: {reject_summary}).",
                 file=sys.stderr,
             )
-            return 2
+            failed_levels.append((level_number, attempts_used, reject_summary))
+            continue
 
         chosen = max(candidate_pool, key=lambda item: float(item["score"]))
         level = chosen["level"]
@@ -857,6 +861,13 @@ def main(argv: list[str]) -> int:
             f"solution_steps={solution_steps}, route_cells={route_length}, "
             f"instruction_coverage={instruction_coverage:.3f}, score={score:.1f}, "
             f"min_moves_to_exit={min_moves_to_exit}, min_direction_types_to_exit={min_direction_types_to_exit})"
+        )
+
+    if failed_levels:
+        failed_levels_text = ", ".join(str(level_number) for level_number, _, _ in failed_levels)
+        print(
+            f"Generation completed with failures on {len(failed_levels)} levels: {failed_levels_text}.",
+            file=sys.stderr,
         )
 
     return 0

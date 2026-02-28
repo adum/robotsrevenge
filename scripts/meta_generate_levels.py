@@ -93,6 +93,14 @@ def load_meta_config(config_path: Path) -> tuple[dict[str, GeneratorSpec], dict[
     curated_copy_mode = str(defaults_raw.get("curated_copy_mode", "copy"))
     if curated_copy_mode not in ("copy", "hardlink"):
         raise ValueError("meta config defaults.curated_copy_mode must be 'copy' or 'hardlink'")
+    start_size_raw = defaults_raw.get("start_size", 50)
+    end_size_raw = defaults_raw.get("end_size", 300)
+    if not isinstance(start_size_raw, int) or not isinstance(end_size_raw, int):
+        raise ValueError("meta config defaults.start_size/end_size must be integers")
+    if start_size_raw < 2 or end_size_raw < 2:
+        raise ValueError("meta config defaults.start_size/end_size must be >= 2")
+    if end_size_raw < start_size_raw:
+        raise ValueError("meta config defaults.end_size must be >= defaults.start_size")
     attempts_per_level_raw = defaults_raw.get("attempts_per_level", None)
     if attempts_per_level_raw is not None:
         if not isinstance(attempts_per_level_raw, int):
@@ -105,6 +113,8 @@ def load_meta_config(config_path: Path) -> tuple[dict[str, GeneratorSpec], dict[
         "runs_per_generator": int(defaults_raw.get("runs_per_generator", 1)),
         "seed_step": int(defaults_raw.get("seed_step", 1_000_003)),
         "out_root": resolve_path_from_root(str(defaults_raw.get("out_root", "generated"))),
+        "start_size": start_size_raw,
+        "end_size": end_size_raw,
         "attempts_per_level": attempts_per_level_raw,
         "curated_id": str(defaults_raw.get("curated_id", "curated")),
         "curated_run_id": str(defaults_raw.get("curated_run_id", "run_001")),
@@ -288,8 +298,18 @@ def build_parser(
     )
 
     parser.add_argument("--size", type=int, default=None, help="Fixed square size override.")
-    parser.add_argument("--min-size", type=int, default=None, help="Minimum size for progressive generators.")
-    parser.add_argument("--max-size", type=int, default=None, help="Maximum size for progressive generators.")
+    parser.add_argument(
+        "--min-size",
+        type=int,
+        default=int(static_defaults["start_size"]),
+        help="Minimum size for progressive generators.",
+    )
+    parser.add_argument(
+        "--max-size",
+        type=int,
+        default=int(static_defaults["end_size"]),
+        help="Maximum size for progressive generators.",
+    )
     parser.add_argument(
         "--progressive-total-levels",
         type=int,
@@ -519,7 +539,8 @@ def main(argv: list[str]) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
 
-    batch_seed = args.seed if args.seed is not None else random.SystemRandom().randrange(0, 2**63)
+    deterministic_seed_mode = args.seed is not None
+    batch_seed = args.seed if deterministic_seed_mode else None
     args.out_root = resolve_path_from_root(args.out_root)
     args.curated_levels_dir = resolve_path_from_root(args.curated_levels_dir)
     args.curated_solutions_dir = resolve_path_from_root(args.curated_solutions_dir)
@@ -535,6 +556,8 @@ def main(argv: list[str]) -> int:
             "runs_per_generator": static_defaults["runs_per_generator"],
             "seed_step": static_defaults["seed_step"],
             "out_root": str(static_defaults["out_root"]),
+            "start_size": static_defaults["start_size"],
+            "end_size": static_defaults["end_size"],
             "attempts_per_level": static_defaults["attempts_per_level"],
             "curated_id": static_defaults["curated_id"],
             "curated_run_id": static_defaults["curated_run_id"],
@@ -600,7 +623,8 @@ def main(argv: list[str]) -> int:
 
     print(
         f"Meta generation: generators={','.join(requested_generators)}, runs_per_generator={args.runs_per_generator}, "
-        f"levels={args.start_level}..{args.max_level}, out={args.out_root}, batch_seed={batch_seed}"
+        f"levels={args.start_level}..{args.max_level}, out={args.out_root}, "
+        f"batch_seed={batch_seed if batch_seed is not None else 'randomized'}"
     , flush=True)
 
     if args.include_curated:
@@ -797,7 +821,9 @@ def main(argv: list[str]) -> int:
         for run_number in range(1, args.runs_per_generator + 1):
             run_sequence += 1
             run_id = f"run_{run_number:03d}"
-            run_seed = (batch_seed + (run_sequence - 1) * args.seed_step) % (2**63)
+            run_seed = None
+            if deterministic_seed_mode and batch_seed is not None:
+                run_seed = (batch_seed + (run_sequence - 1) * args.seed_step) % (2**63)
 
             gen_root = args.out_root / generator_id
             run_root = gen_root / run_id
@@ -831,9 +857,9 @@ def main(argv: list[str]) -> int:
                 str(levels_dir),
                 "--solution-dir",
                 str(solutions_dir),
-                "--seed",
-                str(run_seed),
             ]
+            if run_seed is not None and has_flag(help_text, "--seed"):
+                cmd.extend(["--seed", str(run_seed)])
 
             def add_flag_value(flag: str, value: object | None) -> None:
                 if value is None:
@@ -900,7 +926,10 @@ def main(argv: list[str]) -> int:
             started_monotonic = time.monotonic()
             command_text = shell_join(cmd)
 
-            print(f"[{generator_id} {run_id}] seed={run_seed}", flush=True)
+            print(
+                f"[{generator_id} {run_id}] seed={run_seed if run_seed is not None else 'randomized'}",
+                flush=True,
+            )
             if args.show_command or args.dry_run:
                 print(f"  {command_text}", flush=True)
 

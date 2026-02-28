@@ -30,6 +30,8 @@ Current keys:
 - `runs_per_generator`
 - `seed_step`
 - `out_root`
+- `start_size`
+- `end_size`
 - `attempts_per_level`
 - `curated_id`
 - `curated_run_id`
@@ -126,6 +128,7 @@ Common shared flags (only forwarded if the target generator supports them):
 - attempts: `--attempts-per-level`, `--candidate-attempts`, `--max-attempts`
 
 `meta_generate_levels.py` checks each generator's `--help` output and only passes supported flags.
+By default, `--min-size/--max-size` come from config `defaults.start_size` and `defaults.end_size`.
 
 ## 5) Generator-Specific Extra Args
 

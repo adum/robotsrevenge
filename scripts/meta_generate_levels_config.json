@@ -25,6 +25,8 @@
     "runs_per_generator": 1,
     "seed_step": 1000003,
     "out_root": "generated",
+    "start_size": 7,
+    "end_size": 200,
     "attempts_per_level": null,
     "curated_id": "curated",
     "curated_run_id": "run_001",
