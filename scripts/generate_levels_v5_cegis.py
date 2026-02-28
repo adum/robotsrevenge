@@ -789,6 +789,19 @@ def main(argv: list[str]) -> int:
         counterexamples: list[list[core.Instruction]] = []
         counterexample_hashes: set[str] = set()
 
+        def register_reject(code: str) -> None:
+            nonlocal progress_width
+            reject_counts[code] = reject_counts.get(code, 0) + 1
+            if show_live_progress:
+                attempts_value = f"{attempts_used:>{attempts_width}d}"
+                progress_width = update_progress_line(
+                    f"Level {level_number}/{args.max_level}: attempts={attempts_value}/{attempts_text}, "
+                    f"best_of={len(candidate_pool)}/{args.best_of}, cex={len(counterexamples)}, "
+                    f"status=rejected({code}), {format_reject_counts(reject_counts)}",
+                    progress_width,
+                    show_live_progress,
+                )
+
         if args.verbose:
             print(
                 f"Level {level_number} constraints: size={size}x{size}, "
@@ -817,12 +830,12 @@ def main(argv: list[str]) -> int:
                 rng=rng,
             )
             if blueprint is None:
-                reject_counts["pb"] = reject_counts.get("pb", 0) + 1
+                register_reject("pb")
                 continue
 
             program = blueprint.program
             if core.has_meaningless_jump_instruction(program):
-                reject_counts["mj"] = reject_counts.get("mj", 0) + 1
+                register_reject("mj")
                 continue
 
             generation_execution_limit = v3.choose_generation_execution_limit(
@@ -841,44 +854,35 @@ def main(argv: list[str]) -> int:
                 rng=rng,
             )
             if trace is None:
-                reject_counts["ct"] = reject_counts.get("ct", 0) + 1
-                if show_live_progress:
-                    attempts_value = f"{attempts_used:>{attempts_width}d}"
-                    progress_width = update_progress_line(
-                        f"Level {level_number}/{args.max_level}: attempts={attempts_value}/{attempts_text}, "
-                        f"best_of={len(candidate_pool)}/{args.best_of}, cex={len(counterexamples)}, "
-                        f"status=rejected(ct), {format_reject_counts(reject_counts)}",
-                        progress_width,
-                        show_live_progress,
-                    )
+                register_reject("ct")
                 continue
 
             if trace.steps < min_steps_required:
-                reject_counts["ms"] = reject_counts.get("ms", 0) + 1
+                register_reject("ms")
                 continue
             if trace.jump_exec_count == 0 or (trace.sense_true + trace.sense_false) == 0:
-                reject_counts["js"] = reject_counts.get("js", 0) + 1
+                register_reject("js")
                 continue
             if trace.sense_true == 0 or trace.sense_false == 0:
-                reject_counts["sb"] = reject_counts.get("sb", 0) + 1
+                register_reject("sb")
                 continue
 
             trace_coverage = len(trace.executed_pcs) / float(len(program))
             if trace_coverage < args.min_instruction_coverage:
-                reject_counts["ux"] = reject_counts.get("ux", 0) + 1
+                register_reject("ux")
                 continue
 
             trace_direction_types = sum(1 for count in trace.direction_move_counts if count > 0)
             if trace_direction_types < args.min_solution_direction_types:
-                reject_counts["dv"] = reject_counts.get("dv", 0) + 1
+                register_reject("dv")
                 continue
 
             trace_spread = v3.route_spread_ratio(size, trace.visited_cells)
             if trace_spread < args.min_route_spread:
-                reject_counts["sp"] = reject_counts.get("sp", 0) + 1
+                register_reject("sp")
                 continue
             if len(trace.visited_cells) < min_visited_required:
-                reject_counts["vc"] = reject_counts.get("vc", 0) + 1
+                register_reject("vc")
                 continue
 
             board = v3.build_board(
@@ -890,7 +894,7 @@ def main(argv: list[str]) -> int:
                 rng=rng,
             )
             if board is None:
-                reject_counts["dn"] = reject_counts.get("dn", 0) + 1
+                register_reject("dn")
                 continue
 
             texture_cleanup_attempts_used = 0
@@ -936,7 +940,7 @@ def main(argv: list[str]) -> int:
                 max_steps=generation_execution_limit,
             )
             if run_result.outcome != "escape":
-                reject_counts["ne"] = reject_counts.get("ne", 0) + 1
+                register_reject("ne")
                 continue
 
             if args.max_straight_run > 0 and core.has_straight_run_at_least(
@@ -945,7 +949,7 @@ def main(argv: list[str]) -> int:
                 args.max_straight_run,
                 generation_execution_limit,
             ):
-                reject_counts["sr"] = reject_counts.get("sr", 0) + 1
+                register_reject("sr")
                 continue
 
             has_turn_cancel, has_dead_instruction = core.analyze_execution_path(
@@ -954,26 +958,26 @@ def main(argv: list[str]) -> int:
                 generation_execution_limit,
             )
             if has_turn_cancel:
-                reject_counts["tc"] = reject_counts.get("tc", 0) + 1
+                register_reject("tc")
                 continue
             if has_dead_instruction:
-                reject_counts["ux"] = reject_counts.get("ux", 0) + 1
+                register_reject("ux")
                 continue
 
             if core.has_easy_two_direction_program(level):
-                reject_counts["pl"] = reject_counts.get("pl", 0) + 1
+                register_reject("pl")
                 continue
 
             min_moves_to_exit = core.minimum_moves_to_exit(level)
             if min_moves_to_exit is None:
-                reject_counts["np"] = reject_counts.get("np", 0) + 1
+                register_reject("np")
                 continue
             min_direction_types_to_exit = core.minimum_distinct_directions_to_exit(level)
             if min_direction_types_to_exit is None:
-                reject_counts["np"] = reject_counts.get("np", 0) + 1
+                register_reject("np")
                 continue
             if min_direction_types_to_exit < args.min_direction_types_to_exit:
-                reject_counts["md"] = reject_counts.get("md", 0) + 1
+                register_reject("md")
                 continue
 
             solution_hash = core.compute_program_hash(program)
@@ -984,27 +988,36 @@ def main(argv: list[str]) -> int:
                 sealed_unreachable_cells = core.seal_unreachable_cells(level)
                 post_seal_run = core.simulate_program(level, program, generation_execution_limit)
                 if post_seal_run.outcome != "escape":
-                    reject_counts["ne"] = reject_counts.get("ne", 0) + 1
+                    register_reject("ne")
                     continue
                 run_result = post_seal_run
                 min_moves_to_exit = core.minimum_moves_to_exit(level)
                 if min_moves_to_exit is None:
-                    reject_counts["np"] = reject_counts.get("np", 0) + 1
+                    register_reject("np")
                     continue
                 min_direction_types_to_exit = core.minimum_distinct_directions_to_exit(level)
                 if min_direction_types_to_exit is None:
-                    reject_counts["np"] = reject_counts.get("np", 0) + 1
+                    register_reject("np")
                     continue
                 if min_direction_types_to_exit < args.min_direction_types_to_exit:
-                    reject_counts["md"] = reject_counts.get("md", 0) + 1
+                    register_reject("md")
                     continue
 
             if args.elim_from_solution_steps:
                 level.execution_limit = max(1, run_result.steps)
 
             adversary_max_steps = choose_adversary_execution_limit(level, args)
+            if show_live_progress:
+                attempts_value = f"{attempts_used:>{attempts_width}d}"
+                progress_width = update_progress_line(
+                    f"Level {level_number}/{args.max_level}: attempts={attempts_value}/{attempts_text}, "
+                    f"best_of={len(candidate_pool)}/{args.best_of}, cex={len(counterexamples)}, "
+                    f"status=checking(cx/ad), {format_reject_counts(reject_counts)}",
+                    progress_width,
+                    show_live_progress,
+                )
             if counterexamples and run_known_counterexamples(level, counterexamples, adversary_max_steps):
-                reject_counts["cx"] = reject_counts.get("cx", 0) + 1
+                register_reject("cx")
                 continue
 
             attack = search_adversarial_program(
@@ -1014,7 +1027,7 @@ def main(argv: list[str]) -> int:
                 blocked_hashes=counterexample_hashes,
             )
             if attack.program is not None:
-                reject_counts["ad"] = reject_counts.get("ad", 0) + 1
+                register_reject("ad")
                 attack_hash = core.compute_program_hash(attack.program)
                 if (
                     args.counterexample_pool_limit > 0
