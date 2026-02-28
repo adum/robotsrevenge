@@ -402,8 +402,7 @@ def build_parser() -> argparse.ArgumentParser:
             "non-trivial traversal, and near-unbounded difficulty scaling via decoys and Cellular Automata."
         )
     )
-    parser.add_argument("max_level", type=int, help="Generate up to this level number.")
-    parser.add_argument("--start-level", type=int, default=1, help="Starting level number (default: 1).")
+    parser.add_argument("level_number", type=int, help="Generate exactly this level number.")
     parser.add_argument("--out-dir", type=Path, default=Path("levels"), help="Public level output directory.")
     parser.add_argument("--solution-dir", type=Path, default=Path("solutions"), help="Private solution output directory.")
 
@@ -415,6 +414,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
         help="Strength of difficulty curve ramp.",
+    )
+    parser.add_argument(
+        "--progressive-start-level",
+        type=int,
+        default=1,
+        help="Level index corresponding to minimum size/program settings (default: 1).",
+    )
+    parser.add_argument(
+        "--progressive-total-levels",
+        type=int,
+        default=None,
+        help="Total levels used by progression curve (default: level_number).",
     )
 
     parser.add_argument("--min-program-length", type=int, default=6, help="Minimum hidden-solution length.")
@@ -449,12 +460,22 @@ def main(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.start_level < 1:
-        print("Error: --start-level must be >= 1", file=sys.stderr)
+    if args.level_number < 1:
+        print("Error: level_number must be >= 1", file=sys.stderr)
         return 2
-    if args.max_level < args.start_level:
-        print("Error: max_level must be >= --start-level", file=sys.stderr)
+    if args.progressive_start_level < 1:
+        print("Error: --progressive-start-level must be >= 1", file=sys.stderr)
         return 2
+    if args.progressive_total_levels is None:
+        args.progressive_total_levels = args.level_number
+    if args.progressive_total_levels < args.progressive_start_level:
+        print("Error: --progressive-total-levels must be >= --progressive-start-level", file=sys.stderr)
+        return 2
+    if args.progressive_total_levels < args.level_number:
+        print("Error: --progressive-total-levels must be >= level_number", file=sys.stderr)
+        return 2
+    args.start_level = args.level_number
+    args.max_level = args.level_number
 
     if args.seed is None:
         args.seed = random.SystemRandom().randrange(0, 2**63)
@@ -471,10 +492,11 @@ def main(argv: list[str]) -> int:
         f"CA-decoy mode)"
     )
 
-    for level_number in range(args.start_level, args.max_level + 1):
+    for level_number in (args.level_number,):
         # Progression logic (simplified for V5)
-        span = max(1, args.max_level - args.start_level)
-        progress = (level_number - args.start_level) / span
+        span = max(1, args.progressive_total_levels - args.progressive_start_level)
+        progress = (level_number - args.progressive_start_level) / span
+        progress = min(1.0, max(0.0, progress))
         
         current_size = args.size if args.size is not None else args.min_size + int((args.max_size - args.min_size) * progress)
         current_size = max(args.min_size, min(args.max_size, current_size))

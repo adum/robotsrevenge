@@ -541,6 +541,9 @@ def main(argv: list[str]) -> int:
 
     deterministic_seed_mode = args.seed is not None
     batch_seed = args.seed if deterministic_seed_mode else None
+    effective_progressive_total_levels = (
+        args.progressive_total_levels if args.progressive_total_levels is not None else args.max_level
+    )
     args.out_root = resolve_path_from_root(args.out_root)
     args.curated_levels_dir = resolve_path_from_root(args.curated_levels_dir)
     args.curated_solutions_dir = resolve_path_from_root(args.curated_solutions_dir)
@@ -573,7 +576,7 @@ def main(argv: list[str]) -> int:
             "size": args.size,
             "min_size": args.min_size,
             "max_size": args.max_size,
-            "progressive_total_levels": args.progressive_total_levels,
+            "progressive_total_levels": effective_progressive_total_levels,
             "min_program_length": args.min_program_length,
             "max_program_length": args.max_program_length,
             "density": args.density,
@@ -847,25 +850,18 @@ def main(argv: list[str]) -> int:
             levels_dir.mkdir(parents=True, exist_ok=True)
             solutions_dir.mkdir(parents=True, exist_ok=True)
 
-            cmd: list[str] = [
-                args.python,
-                str(spec.script_path),
-                str(args.max_level),
-                "--start-level",
-                str(args.start_level),
+            cmd_suffix: list[str] = [
                 "--out-dir",
                 str(levels_dir),
                 "--solution-dir",
                 str(solutions_dir),
             ]
-            if run_seed is not None and has_flag(help_text, "--seed"):
-                cmd.extend(["--seed", str(run_seed)])
 
             def add_flag_value(flag: str, value: object | None) -> None:
                 if value is None:
                     return
                 if has_flag(help_text, flag):
-                    cmd.extend([flag, str(value)])
+                    cmd_suffix.extend([flag, str(value)])
 
             def add_bool_flag(base: str, value: bool | None) -> None:
                 if value is None:
@@ -873,16 +869,17 @@ def main(argv: list[str]) -> int:
                 positive = f"--{base}"
                 negative = f"--no-{base}"
                 if value and has_flag(help_text, positive):
-                    cmd.append(positive)
+                    cmd_suffix.append(positive)
                 elif not value and has_flag(help_text, negative):
-                    cmd.append(negative)
+                    cmd_suffix.append(negative)
 
             add_flag_value("--size", args.size)
             if args.size is None:
                 add_flag_value("--min-size", args.min_size)
                 add_flag_value("--max-size", args.max_size)
 
-            add_flag_value("--progressive-total-levels", args.progressive_total_levels)
+            add_flag_value("--progressive-start-level", args.start_level)
+            add_flag_value("--progressive-total-levels", effective_progressive_total_levels)
             add_flag_value("--min-program-length", args.min_program_length)
             add_flag_value("--max-program-length", args.max_program_length)
 
@@ -911,56 +908,91 @@ def main(argv: list[str]) -> int:
                 unified_attempts = args.max_attempts
             if unified_attempts is not None:
                 if has_flag(help_text, "--candidate-attempts"):
-                    cmd.extend(["--candidate-attempts", str(unified_attempts)])
+                    cmd_suffix.extend(["--candidate-attempts", str(unified_attempts)])
                 elif has_flag(help_text, "--max-attempts"):
-                    cmd.extend(["--max-attempts", str(unified_attempts)])
+                    cmd_suffix.extend(["--max-attempts", str(unified_attempts)])
 
             if args.pass_verbose and has_flag(help_text, "--verbose"):
-                cmd.append("--verbose")
+                cmd_suffix.append("--verbose")
 
             for key in ("*", generator_id):
                 for entry in extra_arg_map.get(key, []):
-                    cmd.extend(shlex.split(entry))
+                    cmd_suffix.extend(shlex.split(entry))
 
             run_started = now_utc_iso()
             started_monotonic = time.monotonic()
-            command_text = shell_join(cmd)
+            command_template = [args.python, str(spec.script_path), "{level_number}", *cmd_suffix]
+            level_runs: list[dict[str, object]] = []
+            launch_error: str | None = None
+            return_code = 0
+            log_lines: list[str] = [
+                f"STARTED_AT: {run_started}",
+                f"COMMAND_TEMPLATE: {shell_join(command_template)}",
+                f"RUN_SEED: {run_seed if run_seed is not None else 'randomized'}",
+            ]
 
             print(
                 f"[{generator_id} {run_id}] seed={run_seed if run_seed is not None else 'randomized'}",
                 flush=True,
             )
-            if args.show_command or args.dry_run:
-                print(f"  {command_text}", flush=True)
+            for level_offset, level_id in enumerate(expected_ids):
+                level_cmd = [args.python, str(spec.script_path), str(level_id), *cmd_suffix]
+                level_seed = None
+                if has_flag(help_text, "--seed"):
+                    if run_seed is not None:
+                        level_seed = (run_seed + level_offset * args.seed_step) % (2**63)
+                    if level_seed is not None:
+                        level_cmd.extend(["--seed", str(level_seed)])
+                command_text = shell_join(level_cmd)
+                log_lines.append(f"LEVEL {level_id} COMMAND: {command_text}")
 
-            if args.dry_run:
-                return_code = 0
-                log_path.write_text("DRY RUN\n" + command_text + "\n", encoding="utf-8")
-            else:
-                launch_error: str | None = None
-                with log_path.open("w", encoding="utf-8") as log_file:
-                    log_file.write(f"COMMAND: {command_text}\n")
-                    log_file.write(f"STARTED_AT: {run_started}\n")
-                try:
-                    completed = subprocess.run(
-                        cmd,
-                        cwd=ROOT_DIR,
-                        check=False,
-                    )
-                    return_code = completed.returncode
-                except OSError as exc:
-                    return_code = 127
-                    launch_error = str(exc)
+                if args.show_command or args.dry_run:
+                    print(f"  {command_text}", flush=True)
+
+                level_return_code = 0
+                level_launch_error: str | None = None
+                if not args.dry_run:
+                    try:
+                        completed = subprocess.run(
+                            level_cmd,
+                            cwd=ROOT_DIR,
+                            check=False,
+                        )
+                        level_return_code = completed.returncode
+                    except OSError as exc:
+                        level_return_code = 127
+                        level_launch_error = str(exc)
+
+                log_lines.append(f"LEVEL {level_id} RETURN_CODE: {level_return_code}")
+                if level_launch_error is not None:
+                    log_lines.append(f"LEVEL {level_id} LAUNCH_ERROR: {level_launch_error}")
+                    if launch_error is None:
+                        launch_error = level_launch_error
+
+                level_runs.append(
+                    {
+                        "level_id": level_id,
+                        "seed": level_seed,
+                        "command": level_cmd,
+                        "command_text": command_text,
+                        "return_code": level_return_code,
+                        "launch_error": level_launch_error,
+                    }
+                )
+
+                if level_return_code != 0 and return_code == 0:
+                    return_code = level_return_code
+                if level_return_code != 0 and args.fail_fast:
+                    break
 
             duration_sec = round(time.monotonic() - started_monotonic, 3)
             run_finished = now_utc_iso()
-            if not args.dry_run:
-                with log_path.open("a", encoding="utf-8") as log_file:
-                    log_file.write(f"FINISHED_AT: {run_finished}\n")
-                    log_file.write(f"DURATION_SEC: {duration_sec}\n")
-                    log_file.write(f"RETURN_CODE: {return_code}\n")
-                    if launch_error is not None:
-                        log_file.write(f"LAUNCH_ERROR: {launch_error}\n")
+            log_lines.append(f"FINISHED_AT: {run_finished}")
+            log_lines.append(f"DURATION_SEC: {duration_sec}")
+            log_lines.append(f"RETURN_CODE: {return_code}")
+            if launch_error is not None:
+                log_lines.append(f"LAUNCH_ERROR: {launch_error}")
+            log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
 
             found_level_files = sorted(levels_dir.glob("*.level"))
             found_solution_files = sorted(solutions_dir.glob("*.solution.json"))
@@ -1015,8 +1047,8 @@ def main(argv: list[str]) -> int:
                 "start_level": args.start_level,
                 "max_level": args.max_level,
                 "expected_count": expected_count,
-                "command": cmd,
-                "command_text": command_text,
+                "command_template": command_template,
+                "level_runs": level_runs,
                 "started_at": run_started,
                 "finished_at": run_finished,
                 "duration_sec": duration_sec,

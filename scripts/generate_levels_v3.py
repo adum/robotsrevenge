@@ -1044,8 +1044,7 @@ def build_parser() -> argparse.ArgumentParser:
             "materializes a board, and keeps best candidates by exploration score."
         )
     )
-    parser.add_argument("max_level", type=int, help="Generate up to this level number.")
-    parser.add_argument("--start-level", type=int, default=1, help="Starting level number (default: 1).")
+    parser.add_argument("level_number", type=int, help="Generate exactly this level number.")
     parser.add_argument("--out-dir", type=Path, default=Path("levels"), help="Public level output directory.")
     parser.add_argument(
         "--solution-dir",
@@ -1282,12 +1281,11 @@ def main(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.start_level < 1:
-        print("Error: --start-level must be >= 1.", file=sys.stderr)
+    if args.level_number < 1:
+        print("Error: level_number must be >= 1.", file=sys.stderr)
         return 2
-    if args.max_level < args.start_level:
-        print("Error: max_level must be >= --start-level.", file=sys.stderr)
-        return 2
+    args.start_level = args.level_number
+    args.max_level = args.level_number
     if args.size is not None and args.size < 2:
         print("Error: --size must be >= 2.", file=sys.stderr)
         return 2

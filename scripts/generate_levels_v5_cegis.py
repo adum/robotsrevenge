@@ -480,8 +480,7 @@ def build_parser() -> argparse.ArgumentParser:
             "added to a per-level pool and must fail on future candidates."
         )
     )
-    parser.add_argument("max_level", type=int, help="Generate up to this level number.")
-    parser.add_argument("--start-level", type=int, default=1, help="Starting level number (default: 1).")
+    parser.add_argument("level_number", type=int, help="Generate exactly this level number.")
     parser.add_argument("--out-dir", type=Path, default=Path("levels"), help="Public level output directory.")
     parser.add_argument(
         "--solution-dir",
@@ -678,6 +677,11 @@ def validate_args(args: argparse.Namespace) -> tuple[bool, str]:
 def main(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.level_number < 1:
+        print("Error: level_number must be >= 1.", file=sys.stderr)
+        return 2
+    args.start_level = args.level_number
+    args.max_level = args.level_number
 
     ok, message = validate_args(args)
     if not ok:

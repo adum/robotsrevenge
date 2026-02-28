@@ -416,8 +416,7 @@ def build_parser() -> argparse.ArgumentParser:
             "traverses the board before escaping."
         )
     )
-    parser.add_argument("max_level", type=int, help="Generate up to this level number.")
-    parser.add_argument("--start-level", type=int, default=1, help="Starting level number (default: 1).")
+    parser.add_argument("level_number", type=int, help="Generate exactly this level number.")
     parser.add_argument("--out-dir", type=Path, default=Path("levels"), help="Public level output directory.")
     parser.add_argument(
         "--solution-dir",
@@ -428,6 +427,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--size", type=int, default=None, help="Fixed square board size (overrides min/max size).")
     parser.add_argument("--min-size", type=int, default=200, help="Minimum square size (default: 200).")
     parser.add_argument("--max-size", type=int, default=320, help="Maximum square size (default: 320).")
+    parser.add_argument(
+        "--progressive-start-level",
+        type=int,
+        default=1,
+        help="Level index corresponding to minimum size/program settings (default: 1).",
+    )
+    parser.add_argument(
+        "--progressive-total-levels",
+        type=int,
+        default=None,
+        help="Total levels used by progression curves (default: level_number).",
+    )
     parser.add_argument(
         "--min-program-length",
         type=int,
@@ -534,12 +545,22 @@ def main(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.start_level < 1:
-        print("Error: --start-level must be >= 1.", file=sys.stderr)
+    if args.level_number < 1:
+        print("Error: level_number must be >= 1.", file=sys.stderr)
         return 2
-    if args.max_level < args.start_level:
-        print("Error: max_level must be >= --start-level.", file=sys.stderr)
+    if args.progressive_start_level < 1:
+        print("Error: --progressive-start-level must be >= 1.", file=sys.stderr)
         return 2
+    if args.progressive_total_levels is None:
+        args.progressive_total_levels = args.level_number
+    if args.progressive_total_levels < args.progressive_start_level:
+        print("Error: --progressive-total-levels must be >= --progressive-start-level.", file=sys.stderr)
+        return 2
+    if args.progressive_total_levels < args.level_number:
+        print("Error: --progressive-total-levels must be >= level_number.", file=sys.stderr)
+        return 2
+    args.start_level = args.level_number
+    args.max_level = args.level_number
     if args.size is not None and args.size < 2:
         print("Error: --size must be >= 2.", file=sys.stderr)
         return 2
@@ -594,7 +615,7 @@ def main(argv: list[str]) -> int:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     args.solution_dir.mkdir(parents=True, exist_ok=True)
 
-    level_count = args.max_level - args.start_level + 1
+    progress_level_count = args.progressive_total_levels - args.progressive_start_level + 1
     batch_rng = random.Random(args.seed)
     show_live_progress = args.verbose and sys.stdout.isatty()
     max_candidate_attempts_text = "inf" if args.candidate_attempts == 0 else str(args.candidate_attempts)
@@ -613,6 +634,8 @@ def main(argv: list[str]) -> int:
         "size": args.size,
         "min_size": args.min_size,
         "max_size": args.max_size,
+        "progressive_start_level": args.progressive_start_level,
+        "progressive_total_levels": args.progressive_total_levels,
         "min_program_length": args.min_program_length,
         "max_program_length": args.max_program_length,
         "program_cycles": args.program_cycles,
@@ -628,9 +651,18 @@ def main(argv: list[str]) -> int:
 
     failed_levels: list[tuple[int, int, str]] = []
 
-    for level_offset, level_number in enumerate(range(args.start_level, args.max_level + 1)):
-        size = choose_size(level_offset, level_count, args)
-        target_program_length = choose_target_program_length(level_offset, level_count, args, batch_rng)
+    for level_number in (args.level_number,):
+        progress_level_offset = max(
+            0,
+            min(progress_level_count - 1, level_number - args.progressive_start_level),
+        )
+        size = choose_size(progress_level_offset, progress_level_count, args)
+        target_program_length = choose_target_program_length(
+            progress_level_offset,
+            progress_level_count,
+            args,
+            batch_rng,
+        )
 
         progress_width = 0
         reject_counts: dict[str, int] = {}
