@@ -156,13 +156,15 @@ def random_jump_offset(length: int, jump_span: int, rng: random.Random) -> int:
     if length <= 1:
         return 2
     span = max(2, min(jump_span, max(2, length - 1)))
-    while True:
-        offset = rng.randint(-span, span)
-        if offset == 0:
-            continue
-        if effective_jump_mod(offset, length) in (0, 1):
-            continue
-        return offset
+    candidates = [
+        offset
+        for offset in range(-span, span + 1)
+        if offset != 0 and effective_jump_mod(offset, length) not in (0, 1)
+    ]
+    if not candidates:
+        # Short programs (e.g. length 2) have no non-trivial jump offsets.
+        return 2
+    return candidates[rng.randrange(0, len(candidates))]
 
 
 def weighted_random_attack_op(rng: random.Random) -> str:
