@@ -30,6 +30,7 @@ Current keys:
 - `runs_per_generator`
 - `seed_step`
 - `out_root`
+- `attempts_per_level`
 - `curated_id`
 - `curated_run_id`
 - `curated_levels_dir`
@@ -97,6 +98,20 @@ python3 scripts/meta_generate_levels.py 100 \
   --runs-per-generator 2 \
   --show-command \
   --dry-run
+```
+
+### Generator output behavior
+
+Child generator stdout/stderr is printed directly to terminal by default.
+Use `--pass-verbose` to pass `--verbose` through to child generators that support it.
+
+`generator.log` is meta-only and includes command/timing/exit status (it does not mirror child stdout/stderr).
+
+```bash
+python3 scripts/meta_generate_levels.py 50 \
+  --start-level 1 \
+  --generators v7_mission_compiler \
+  --pass-verbose
 ```
 
 ## 4) Passing Shared Constraints
@@ -262,7 +277,7 @@ generated_campaign/<generator>/best_of/
 
 ## 11) Troubleshooting Notes
 
-- If a generator fails often, inspect that run's `generator.log`.
+- If a generator fails often, check terminal output first; `generator.log` contains command/timing/return code.
 - If a flag appears ignored, confirm the target generator supports it in `--help`.
 - If you need curated-only mode, use `--generators none --include-curated`.
 - If paths in config are relative, they are resolved relative to repo root.

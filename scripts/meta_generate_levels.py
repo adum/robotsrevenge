@@ -93,12 +93,19 @@ def load_meta_config(config_path: Path) -> tuple[dict[str, GeneratorSpec], dict[
     curated_copy_mode = str(defaults_raw.get("curated_copy_mode", "copy"))
     if curated_copy_mode not in ("copy", "hardlink"):
         raise ValueError("meta config defaults.curated_copy_mode must be 'copy' or 'hardlink'")
+    attempts_per_level_raw = defaults_raw.get("attempts_per_level", None)
+    if attempts_per_level_raw is not None:
+        if not isinstance(attempts_per_level_raw, int):
+            raise ValueError("meta config defaults.attempts_per_level must be an integer or null")
+        if attempts_per_level_raw < 0:
+            raise ValueError("meta config defaults.attempts_per_level must be >= 0 or null")
 
     defaults: dict[str, object] = {
         "default_generators": ordered_default_generators,
         "runs_per_generator": int(defaults_raw.get("runs_per_generator", 1)),
         "seed_step": int(defaults_raw.get("seed_step", 1_000_003)),
         "out_root": resolve_path_from_root(str(defaults_raw.get("out_root", "generated"))),
+        "attempts_per_level": attempts_per_level_raw,
         "curated_id": str(defaults_raw.get("curated_id", "curated")),
         "curated_run_id": str(defaults_raw.get("curated_run_id", "run_001")),
         "curated_levels_dir": resolve_path_from_root(str(defaults_raw.get("curated_levels_dir", "levels"))),
@@ -298,7 +305,11 @@ def build_parser(
     parser.add_argument(
         "--attempts-per-level",
         type=int,
-        default=None,
+        default=(
+            int(static_defaults["attempts_per_level"])
+            if static_defaults["attempts_per_level"] is not None
+            else None
+        ),
         help="Unified attempts cap mapped to --candidate-attempts or --max-attempts.",
     )
     parser.add_argument("--candidate-attempts", type=int, default=None, help="Override --candidate-attempts where supported.")
@@ -465,6 +476,9 @@ def main(argv: list[str]) -> int:
     if args.seed_step == 0:
         print("Error: --seed-step cannot be 0.", file=sys.stderr)
         return 2
+    if args.attempts_per_level is not None and args.attempts_per_level < 0:
+        print("Error: --attempts-per-level must be >= 0.", file=sys.stderr)
+        return 2
 
     requested_generators = parse_generators_arg(args.generators)
     if not requested_generators and not args.include_curated:
@@ -521,6 +535,7 @@ def main(argv: list[str]) -> int:
             "runs_per_generator": static_defaults["runs_per_generator"],
             "seed_step": static_defaults["seed_step"],
             "out_root": str(static_defaults["out_root"]),
+            "attempts_per_level": static_defaults["attempts_per_level"],
             "curated_id": static_defaults["curated_id"],
             "curated_run_id": static_defaults["curated_run_id"],
             "curated_levels_dir": str(static_defaults["curated_levels_dir"]),
@@ -586,7 +601,7 @@ def main(argv: list[str]) -> int:
     print(
         f"Meta generation: generators={','.join(requested_generators)}, runs_per_generator={args.runs_per_generator}, "
         f"levels={args.start_level}..{args.max_level}, out={args.out_root}, batch_seed={batch_seed}"
-    )
+    , flush=True)
 
     if args.include_curated:
         curated_start = args.curated_start_level if args.curated_start_level is not None else args.start_level
@@ -597,7 +612,7 @@ def main(argv: list[str]) -> int:
         curated_expected_count = len(curated_expected_ids)
 
         if curated_expected_count == 0:
-            print("Curated source enabled but selected range is empty; skipping curated import.")
+            print("Curated source enabled but selected range is empty; skipping curated import.", flush=True)
         else:
             if not args.curated_levels_dir.is_dir():
                 print(f"Error: curated levels dir not found: {args.curated_levels_dir}", file=sys.stderr)
@@ -705,14 +720,14 @@ def main(argv: list[str]) -> int:
                 print(
                     f"[{generator_id} {run_id}] status={status} paired={len(paired_ids)}/{curated_expected_count} "
                     f"log={log_path}"
-                )
+                , flush=True)
                 if args.fail_fast:
-                    print("Fail-fast enabled; stopping.")
+                    print("Fail-fast enabled; stopping.", flush=True)
             else:
                 print(
                     f"[{generator_id} {run_id}] status=ok paired={len(paired_ids)}/{curated_expected_count} "
                     f"duration={duration_sec:.3f}s"
-                )
+                , flush=True)
 
             command_text = (
                 f"curated import from {args.curated_levels_dir} and {args.curated_solutions_dir}, "
@@ -885,28 +900,38 @@ def main(argv: list[str]) -> int:
             started_monotonic = time.monotonic()
             command_text = shell_join(cmd)
 
-            print(f"[{generator_id} {run_id}] seed={run_seed}")
+            print(f"[{generator_id} {run_id}] seed={run_seed}", flush=True)
             if args.show_command or args.dry_run:
-                print(f"  {command_text}")
+                print(f"  {command_text}", flush=True)
 
             if args.dry_run:
                 return_code = 0
                 log_path.write_text("DRY RUN\n" + command_text + "\n", encoding="utf-8")
             else:
+                launch_error: str | None = None
                 with log_path.open("w", encoding="utf-8") as log_file:
-                    log_file.write(command_text + "\n\n")
+                    log_file.write(f"COMMAND: {command_text}\n")
+                    log_file.write(f"STARTED_AT: {run_started}\n")
+                try:
                     completed = subprocess.run(
                         cmd,
                         cwd=ROOT_DIR,
-                        stdout=log_file,
-                        stderr=subprocess.STDOUT,
-                        text=True,
                         check=False,
                     )
-                return_code = completed.returncode
+                    return_code = completed.returncode
+                except OSError as exc:
+                    return_code = 127
+                    launch_error = str(exc)
 
             duration_sec = round(time.monotonic() - started_monotonic, 3)
             run_finished = now_utc_iso()
+            if not args.dry_run:
+                with log_path.open("a", encoding="utf-8") as log_file:
+                    log_file.write(f"FINISHED_AT: {run_finished}\n")
+                    log_file.write(f"DURATION_SEC: {duration_sec}\n")
+                    log_file.write(f"RETURN_CODE: {return_code}\n")
+                    if launch_error is not None:
+                        log_file.write(f"LAUNCH_ERROR: {launch_error}\n")
 
             found_level_files = sorted(levels_dir.glob("*.level"))
             found_solution_files = sorted(solutions_dir.glob("*.solution.json"))
@@ -947,11 +972,11 @@ def main(argv: list[str]) -> int:
                 print(
                     f"  -> status={status} rc={return_code} paired={len(paired_ids)}/{expected_count} "
                     f"log={log_path}"
-                )
+                , flush=True)
                 if args.fail_fast:
-                    print("Fail-fast enabled; stopping.")
+                    print("Fail-fast enabled; stopping.", flush=True)
             else:
-                print(f"  -> status=ok paired={len(paired_ids)}/{expected_count} duration={duration_sec:.3f}s")
+                print(f"  -> status=ok paired={len(paired_ids)}/{expected_count} duration={duration_sec:.3f}s", flush=True)
 
             run_manifest = {
                 "generator": generator_id,
@@ -1006,7 +1031,7 @@ def main(argv: list[str]) -> int:
 
     meta_manifest_path = args.out_root / "meta_manifest.json"
     meta_manifest_path.write_text(json.dumps(meta_manifest, indent=2), encoding="utf-8")
-    print(f"Wrote meta manifest: {meta_manifest_path}")
+    print(f"Wrote meta manifest: {meta_manifest_path}", flush=True)
 
     if failed_runs > 0:
         print(f"Completed with failures: {failed_runs}/{len(meta_manifest['runs'])} runs not ok.", file=sys.stderr)
