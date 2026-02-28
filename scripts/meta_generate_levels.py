@@ -237,6 +237,75 @@ def summarize_candidate(level_path: Path, solution_path: Path) -> dict[str, obje
     return summary
 
 
+def print_production_summary(meta_manifest: dict[str, object], out_root: Path) -> None:
+    runs_raw = meta_manifest.get("runs", [])
+    if not isinstance(runs_raw, list):
+        print("Production summary: unavailable (invalid runs payload).", flush=True)
+        return
+
+    total_runs = len(runs_raw)
+    total_ok = 0
+    total_failed = 0
+    total_incomplete = 0
+    total_paired = 0
+    total_expected = 0
+    by_generator: dict[str, dict[str, int]] = {}
+
+    for run in runs_raw:
+        if not isinstance(run, dict):
+            continue
+        generator_id = str(run.get("generator", "unknown"))
+        status = str(run.get("status", "unknown"))
+        paired = int(run.get("paired", 0))
+        expected = int(run.get("expected_count", 0))
+
+        total_paired += paired
+        total_expected += expected
+        if status == "ok":
+            total_ok += 1
+        elif status == "incomplete":
+            total_incomplete += 1
+        else:
+            total_failed += 1
+
+        bucket = by_generator.setdefault(
+            generator_id,
+            {
+                "runs": 0,
+                "ok": 0,
+                "incomplete": 0,
+                "failed": 0,
+                "paired": 0,
+                "expected": 0,
+            },
+        )
+        bucket["runs"] += 1
+        bucket["paired"] += paired
+        bucket["expected"] += expected
+        if status == "ok":
+            bucket["ok"] += 1
+        elif status == "incomplete":
+            bucket["incomplete"] += 1
+        else:
+            bucket["failed"] += 1
+
+    print(
+        "Production summary: "
+        f"runs={total_runs} ok={total_ok} incomplete={total_incomplete} failed={total_failed} "
+        f"paired={total_paired}/{total_expected}",
+        flush=True,
+    )
+    for generator_id in sorted(by_generator):
+        bucket = by_generator[generator_id]
+        print(
+            f"  {generator_id}: runs={bucket['runs']} ok={bucket['ok']} "
+            f"incomplete={bucket['incomplete']} failed={bucket['failed']} "
+            f"paired={bucket['paired']}/{bucket['expected']} "
+            f"out={out_root / generator_id}",
+            flush=True,
+        )
+
+
 def build_parser(
     generator_specs: dict[str, GeneratorSpec],
     static_defaults: dict[str, object],
@@ -811,6 +880,8 @@ def main(argv: list[str]) -> int:
                 meta_manifest["failed_runs"] = failed_runs
                 meta_manifest_path = args.out_root / "meta_manifest.json"
                 meta_manifest_path.write_text(json.dumps(meta_manifest, indent=2), encoding="utf-8")
+                print(f"Wrote meta manifest: {meta_manifest_path}", flush=True)
+                print_production_summary(meta_manifest, args.out_root)
                 return 1
 
     for generator_id in requested_generators:
@@ -1084,6 +1155,8 @@ def main(argv: list[str]) -> int:
                 meta_manifest["failed_runs"] = failed_runs
                 meta_manifest_path = args.out_root / "meta_manifest.json"
                 meta_manifest_path.write_text(json.dumps(meta_manifest, indent=2), encoding="utf-8")
+                print(f"Wrote meta manifest: {meta_manifest_path}", flush=True)
+                print_production_summary(meta_manifest, args.out_root)
                 return 1
 
     meta_manifest["finished_at"] = now_utc_iso()
@@ -1093,6 +1166,7 @@ def main(argv: list[str]) -> int:
     meta_manifest_path = args.out_root / "meta_manifest.json"
     meta_manifest_path.write_text(json.dumps(meta_manifest, indent=2), encoding="utf-8")
     print(f"Wrote meta manifest: {meta_manifest_path}", flush=True)
+    print_production_summary(meta_manifest, args.out_root)
 
     if failed_runs > 0:
         print(f"Completed with failures: {failed_runs}/{len(meta_manifest['runs'])} runs not ok.", file=sys.stderr)
