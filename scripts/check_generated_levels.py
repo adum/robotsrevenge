@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,6 +15,24 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 import sensejump_core as core
+
+
+REJECT_REASON_NAMES: dict[str, str] = {
+    "ms": "missing_solution_file",
+    "lp": "level_parse_error",
+    "sp": "missing_solution_program",
+    "sj": "solution_json_parse_error",
+    "hs": "solution_hash_mismatch",
+    "hl": "level_hash_mismatch",
+    "se": "provided_solution_does_not_escape",
+    "mj": "meaningless_jump_instruction",
+    "mm": "min_moves_to_exit_below_threshold",
+    "md": "min_direction_types_to_exit_below_threshold",
+    "ss": "solution_steps_below_threshold",
+    "ed": "easy_two_direction_escape_found",
+    "cp": "cpp_short_solution_found",
+    "ce": "cpp_short_solver_error",
+}
 
 
 def now_utc_iso() -> str:
@@ -115,6 +135,27 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Reject if provided solution has a meaningless jump instruction.",
     )
+    parser.add_argument(
+        "--reject-cpp-short-solution-max-depth",
+        type=int,
+        default=0,
+        help=(
+            "Reject levels where the C++ brute solver finds a solution at or below "
+            "this depth. 0 disables this check (default: 0)."
+        ),
+    )
+    parser.add_argument(
+        "--cpp-short-solver-path",
+        type=Path,
+        default=ROOT_DIR / "scripts" / "solve_level_cpp",
+        help="Path to compiled C++ brute solver binary (default: scripts/solve_level_cpp).",
+    )
+    parser.add_argument(
+        "--cpp-short-solver-timeout",
+        type=float,
+        default=0.0,
+        help="Per-level timeout in seconds for C++ short-solver check. 0 disables timeout (default: 0).",
+    )
 
     parser.add_argument(
         "--enforce",
@@ -130,9 +171,86 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def has_cpp_short_solution(
+    level_text: str,
+    solver_path: Path,
+    max_depth: int,
+    timeout_seconds: float,
+) -> tuple[bool | None, str | None]:
+    try:
+        completed = subprocess.run(
+            [str(solver_path), "--min-depth", "1", "--max-depth", str(max_depth)],
+            input=level_text,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=(timeout_seconds if timeout_seconds > 0 else None),
+        )
+    except subprocess.TimeoutExpired:
+        return None, "timeout"
+    except Exception:  # noqa: BLE001
+        return None, "invoke"
+
+    if completed.returncode == 0:
+        return True, None
+    if completed.returncode == 1:
+        return False, None
+    return None, "rc"
+
+
+def ensure_cpp_short_solver_binary(requested_path: Path, parser: argparse.ArgumentParser) -> Path:
+    """
+    Ensures a runnable C++ short-solver binary exists at requested_path.
+    If missing, attempts to build from sibling .cpp source.
+    """
+    solver_path = requested_path
+    if solver_path.exists() and solver_path.is_file() and os.access(solver_path, os.X_OK):
+        return solver_path
+
+    source_path = solver_path.with_suffix(".cpp")
+    if not source_path.exists() or not source_path.is_file():
+        parser.error(f"--cpp-short-solver-path not found or not executable: {solver_path}")
+
+    compiler = shutil.which("g++")
+    if compiler is None:
+        parser.error(
+            f"--cpp-short-solver-path is missing ({solver_path}) and g++ is not available to build from {source_path}."
+        )
+
+    try:
+        source_mtime = source_path.stat().st_mtime
+        binary_mtime = solver_path.stat().st_mtime if solver_path.exists() else 0.0
+        needs_build = (not solver_path.exists()) or source_mtime > binary_mtime or not os.access(solver_path, os.X_OK)
+    except OSError:
+        needs_build = True
+
+    if needs_build:
+        build = subprocess.run(
+            [compiler, "-O3", "-std=c++17", str(source_path), "-o", str(solver_path)],
+            cwd=ROOT_DIR,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if build.returncode != 0:
+            stderr_text = (build.stderr or "").strip()
+            parser.error(
+                f"Failed to build C++ solver from {source_path} -> {solver_path}. "
+                f"Compiler output: {stderr_text or 'unknown error'}"
+            )
+
+    if not solver_path.exists() or not solver_path.is_file() or not os.access(solver_path, os.X_OK):
+        parser.error(f"--cpp-short-solver-path is not executable after build: {solver_path}")
+    return solver_path
+
+
 def main(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.reject_cpp_short_solution_max_depth < 0:
+        parser.error("--reject-cpp-short-solution-max-depth must be >= 0.")
+    if args.cpp_short_solver_timeout < 0:
+        parser.error("--cpp-short-solver-timeout must be >= 0.")
 
     generator_filters = set(args.generator) if args.generator else None
     run_filters = set(args.run_id) if args.run_id else None
@@ -144,6 +262,13 @@ def main(argv: list[str]) -> int:
     if not run_dirs:
         print(f"No run directories found under {args.root}", file=sys.stderr)
         return 1
+
+    cpp_short_solver_path: Path | None = None
+    if args.reject_cpp_short_solution_max_depth > 0:
+        cpp_short_solver_path = args.cpp_short_solver_path
+        if not cpp_short_solver_path.is_absolute():
+            cpp_short_solver_path = (ROOT_DIR / cpp_short_solver_path).resolve()
+        cpp_short_solver_path = ensure_cpp_short_solver_binary(cpp_short_solver_path, parser)
 
     report: dict[str, object] = {
         "created_at": now_utc_iso(),
@@ -162,6 +287,9 @@ def main(argv: list[str]) -> int:
             "min_solution_steps": args.min_solution_steps,
             "reject_easy_two_direction": args.reject_easy_two_direction,
             "reject_meaningless_jump": args.reject_meaningless_jump,
+            "reject_cpp_short_solution_max_depth": args.reject_cpp_short_solution_max_depth,
+            "cpp_short_solver_path": str(cpp_short_solver_path) if cpp_short_solver_path is not None else None,
+            "cpp_short_solver_timeout": args.cpp_short_solver_timeout,
             "enforce": args.enforce,
             "delete_invalid": args.delete_invalid,
             "dry_run": args.dry_run,
@@ -204,11 +332,13 @@ def main(argv: list[str]) -> int:
             solution_data = None
             program_text = None
             program = None
+            level_raw = None
 
             if not solution_path.exists():
                 reasons.append("ms")
             try:
-                level_obj = core.parse_level(level_path.read_text(encoding="utf-8"))
+                level_raw = level_path.read_text(encoding="utf-8")
+                level_obj = core.parse_level(level_raw)
                 metrics["width"] = level_obj.width
                 metrics["height"] = level_obj.height
                 metrics["program_limit"] = level_obj.program_limit
@@ -285,6 +415,27 @@ def main(argv: list[str]) -> int:
             if args.reject_easy_two_direction and level_obj is not None:
                 if core.has_easy_two_direction_program(level_obj):
                     reasons.append("ed")
+            if (
+                args.reject_cpp_short_solution_max_depth > 0
+                and cpp_short_solver_path is not None
+                and level_raw is not None
+                and level_obj is not None
+            ):
+                short_found, error = has_cpp_short_solution(
+                    level_raw,
+                    cpp_short_solver_path,
+                    args.reject_cpp_short_solution_max_depth,
+                    args.cpp_short_solver_timeout,
+                )
+                metrics["cpp_short_check_max_depth"] = args.reject_cpp_short_solution_max_depth
+                if short_found is True:
+                    metrics["cpp_short_solution_found"] = True
+                    reasons.append("cp")
+                elif short_found is False:
+                    metrics["cpp_short_solution_found"] = False
+                else:
+                    metrics["cpp_short_solver_error"] = error
+                    reasons.append("ce")
 
             is_valid = len(reasons) == 0
             if is_valid:
@@ -332,6 +483,14 @@ def main(argv: list[str]) -> int:
         f"Checked {total_candidates} candidates across {len(run_dirs)} runs. "
         f"valid={total_valid}, invalid={total_invalid}, report={report_path}"
     )
+    if reason_counts:
+        summary_bits = []
+        for code, count in sorted(reason_counts.items(), key=lambda item: (-item[1], item[0])):
+            reason_name = REJECT_REASON_NAMES.get(code, "unknown_reason")
+            summary_bits.append(f"{code}({reason_name})={count}")
+        print("Reject reasons: " + " ".join(summary_bits))
+    else:
+        print("Reject reasons: none")
     if args.enforce and args.delete_invalid:
         if args.dry_run:
             print(f"Dry run: would delete {deleted_count} invalid candidates.")
