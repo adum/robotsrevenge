@@ -156,6 +156,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Per-level timeout in seconds for C++ short-solver check. 0 disables timeout (default: 0).",
     )
+    parser.add_argument(
+        "--cpp-short-check-min-size",
+        type=int,
+        default=13,
+        help=(
+            "Minimum board side length required before applying C++ short-solution check. "
+            "Boards smaller than this are skipped (default: 13)."
+        ),
+    )
 
     parser.add_argument(
         "--enforce",
@@ -251,6 +260,8 @@ def main(argv: list[str]) -> int:
         parser.error("--reject-cpp-short-solution-max-depth must be >= 0.")
     if args.cpp_short_solver_timeout < 0:
         parser.error("--cpp-short-solver-timeout must be >= 0.")
+    if args.cpp_short_check_min_size < 0:
+        parser.error("--cpp-short-check-min-size must be >= 0.")
 
     generator_filters = set(args.generator) if args.generator else None
     run_filters = set(args.run_id) if args.run_id else None
@@ -263,12 +274,12 @@ def main(argv: list[str]) -> int:
         print(f"No run directories found under {args.root}", file=sys.stderr)
         return 1
 
+    cpp_short_solver_requested_path: Path | None = None
     cpp_short_solver_path: Path | None = None
     if args.reject_cpp_short_solution_max_depth > 0:
-        cpp_short_solver_path = args.cpp_short_solver_path
-        if not cpp_short_solver_path.is_absolute():
-            cpp_short_solver_path = (ROOT_DIR / cpp_short_solver_path).resolve()
-        cpp_short_solver_path = ensure_cpp_short_solver_binary(cpp_short_solver_path, parser)
+        cpp_short_solver_requested_path = args.cpp_short_solver_path
+        if not cpp_short_solver_requested_path.is_absolute():
+            cpp_short_solver_requested_path = (ROOT_DIR / cpp_short_solver_requested_path).resolve()
 
     report: dict[str, object] = {
         "created_at": now_utc_iso(),
@@ -288,8 +299,13 @@ def main(argv: list[str]) -> int:
             "reject_easy_two_direction": args.reject_easy_two_direction,
             "reject_meaningless_jump": args.reject_meaningless_jump,
             "reject_cpp_short_solution_max_depth": args.reject_cpp_short_solution_max_depth,
-            "cpp_short_solver_path": str(cpp_short_solver_path) if cpp_short_solver_path is not None else None,
+            "cpp_short_solver_path": (
+                str(cpp_short_solver_requested_path)
+                if cpp_short_solver_requested_path is not None
+                else None
+            ),
             "cpp_short_solver_timeout": args.cpp_short_solver_timeout,
+            "cpp_short_check_min_size": args.cpp_short_check_min_size,
             "enforce": args.enforce,
             "delete_invalid": args.delete_invalid,
             "dry_run": args.dry_run,
@@ -417,25 +433,33 @@ def main(argv: list[str]) -> int:
                     reasons.append("ed")
             if (
                 args.reject_cpp_short_solution_max_depth > 0
-                and cpp_short_solver_path is not None
                 and level_raw is not None
                 and level_obj is not None
             ):
-                short_found, error = has_cpp_short_solution(
-                    level_raw,
-                    cpp_short_solver_path,
-                    args.reject_cpp_short_solution_max_depth,
-                    args.cpp_short_solver_timeout,
-                )
-                metrics["cpp_short_check_max_depth"] = args.reject_cpp_short_solution_max_depth
-                if short_found is True:
-                    metrics["cpp_short_solution_found"] = True
-                    reasons.append("cp")
-                elif short_found is False:
-                    metrics["cpp_short_solution_found"] = False
+                board_side = min(level_obj.width, level_obj.height)
+                metrics["cpp_short_check_min_size"] = args.cpp_short_check_min_size
+                metrics["cpp_short_board_side"] = board_side
+                if board_side < args.cpp_short_check_min_size:
+                    metrics["cpp_short_check_skipped"] = "below_min_size"
                 else:
-                    metrics["cpp_short_solver_error"] = error
-                    reasons.append("ce")
+                    if cpp_short_solver_path is None and cpp_short_solver_requested_path is not None:
+                        cpp_short_solver_path = ensure_cpp_short_solver_binary(cpp_short_solver_requested_path, parser)
+                    if cpp_short_solver_path is not None:
+                        short_found, error = has_cpp_short_solution(
+                            level_raw,
+                            cpp_short_solver_path,
+                            args.reject_cpp_short_solution_max_depth,
+                            args.cpp_short_solver_timeout,
+                        )
+                        metrics["cpp_short_check_max_depth"] = args.reject_cpp_short_solution_max_depth
+                        if short_found is True:
+                            metrics["cpp_short_solution_found"] = True
+                            reasons.append("cp")
+                        elif short_found is False:
+                            metrics["cpp_short_solution_found"] = False
+                        else:
+                            metrics["cpp_short_solver_error"] = error
+                            reasons.append("ce")
 
             is_valid = len(reasons) == 0
             if is_valid:
