@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -177,6 +178,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="When enforcing, delete invalid level+solution files.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Do not delete files; report only planned deletes.")
+    parser.add_argument("--verbose", action="store_true", help="Show a live one-line progress update.")
     return parser
 
 
@@ -253,6 +255,15 @@ def ensure_cpp_short_solver_binary(requested_path: Path, parser: argparse.Argume
     return solver_path
 
 
+def write_progress_line(message: str) -> None:
+    cols = shutil.get_terminal_size(fallback=(120, 20)).columns
+    width = max(20, cols - 1)
+    if len(message) > width:
+        message = message[: width - 1]
+    sys.stdout.write("\r" + message.ljust(width))
+    sys.stdout.flush()
+
+
 def main(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -319,6 +330,14 @@ def main(argv: list[str]) -> int:
     total_invalid = 0
     reason_counts: dict[str, int] = {}
     deleted_count = 0
+    total_candidates_planned = 0
+    for run_dir in run_dirs:
+        levels_dir = run_dir / "levels"
+        for level_path in levels_dir.glob("*.level"):
+            if level_id_from_path(level_path) is not None:
+                total_candidates_planned += 1
+    processed_count = 0
+    start_time = time.monotonic()
 
     for run_dir in run_dirs:
         generator_id = run_dir.parent.name
@@ -490,6 +509,19 @@ def main(argv: list[str]) -> int:
                     "deleted": bool(args.enforce and args.delete_invalid and not is_valid),
                 }
             )
+            processed_count += 1
+            if args.verbose:
+                elapsed = max(0.001, time.monotonic() - start_time)
+                rate = processed_count / elapsed
+                last_status = "ok" if is_valid else f"rej:{','.join(sorted(set(reasons)))}"
+                write_progress_line(
+                    (
+                        f"Progress {processed_count}/{total_candidates_planned} "
+                        f"({(100.0 * processed_count / max(1, total_candidates_planned)):.1f}%) "
+                        f"run={generator_id}/{run_id} level={level_id} status={last_status} "
+                        f"valid={total_valid} invalid={total_invalid} rate={rate:.1f}/s"
+                    )
+                )
 
         report["runs"].append(run_result)
 
@@ -502,6 +534,9 @@ def main(argv: list[str]) -> int:
         "reason_counts": reason_counts,
     }
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    if args.verbose:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
 
     print(
         f"Checked {total_candidates} candidates across {len(run_dirs)} runs. "
