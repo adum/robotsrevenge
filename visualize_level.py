@@ -385,6 +385,7 @@ def main() -> int:
     trail_cells: set[tuple[int, int]] | None = None
     sensed_block_cells: set[tuple[int, int]] | None = None
     run_result: core.RunResult | None = None
+    meander_metrics: core.SolutionMeanderMetrics | None = None
     if args.solution_file is not None:
         try:
             program_raw = load_solution_program_text(args.solution_file)
@@ -392,6 +393,7 @@ def main() -> int:
             run_result, trail_cells, sensed_block_cells = simulate_with_trace(
                 level, program, level.execution_limit
             )
+            meander_metrics = core.solution_meander_metrics(level, program, level.execution_limit)
         except (OSError, ValueError, core.ProgramFormatError) as exc:
             print(f"Error: {exc}")
             return 2
@@ -424,6 +426,15 @@ def main() -> int:
         print(
             f"Trace: outcome={run_result.outcome} steps={run_result.steps} "
             f"jump_exec={run_result.jump_exec_count} sense_exec={run_result.sense_exec_count}"
+        )
+    if meander_metrics is not None:
+        print(
+            "Meander: "
+            f"score={meander_metrics.score:.2f} "
+            f"ineff={meander_metrics.inefficiency_ratio:.3f} "
+            f"coverage={meander_metrics.coarse_coverage_ratio:.3f} "
+            f"spread={meander_metrics.spread_ratio:.3f} "
+            f"turns={meander_metrics.significant_turns}"
         )
     return 0
 

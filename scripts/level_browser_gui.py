@@ -217,6 +217,7 @@ class LevelBrowserApp:
         self.level_cache: dict[int, core.Level] = {}
         self.solution_cache: dict[int, dict[str, object] | None] = {}
         self.trace_cache: dict[int, TraceResult | None] = {}
+        self.meander_cache: dict[int, core.SolutionMeanderMetrics | None] = {}
 
         self.current_index = 0
         if start_level is not None:
@@ -303,6 +304,28 @@ class LevelBrowserApp:
         self.trace_cache[entry.level_id] = trace
         return trace
 
+    def _load_meander(
+        self,
+        entry: LevelEntry,
+        level: core.Level,
+        solution: dict[str, object] | None,
+    ) -> core.SolutionMeanderMetrics | None:
+        if entry.level_id in self.meander_cache:
+            return self.meander_cache[entry.level_id]
+
+        meander: core.SolutionMeanderMetrics | None = None
+        if solution is not None:
+            program_text = solution.get("solution_program")
+            if isinstance(program_text, str) and program_text.strip():
+                try:
+                    program = core.parse_program_text(program_text)
+                    meander = core.solution_meander_metrics(level, program)
+                except Exception:  # noqa: BLE001
+                    meander = None
+
+        self.meander_cache[entry.level_id] = meander
+        return meander
+
     def _set_info_text(self, text: str) -> None:
         self.info_text.configure(state="normal")
         self.info_text.delete("1.0", "end")
@@ -344,9 +367,10 @@ class LevelBrowserApp:
         level = self._load_level(entry)
         solution = self._load_solution(entry)
         trace = self._load_trace(entry, level, solution)
+        meander = self._load_meander(entry, level, solution)
 
         self._render_board(level, trace)
-        self._render_info(entry, level, solution, trace)
+        self._render_info(entry, level, solution, trace, meander)
 
     def _render_board(self, level: core.Level, trace: TraceResult | None) -> None:
         self.canvas.delete("all")
@@ -417,6 +441,7 @@ class LevelBrowserApp:
         level: core.Level,
         solution: dict[str, object] | None,
         trace: TraceResult | None,
+        meander: core.SolutionMeanderMetrics | None,
     ) -> None:
         index = self.current_index + 1
         total = len(self.entries)
@@ -443,6 +468,7 @@ class LevelBrowserApp:
         steps = solution.get("solution_steps")
         min_moves = solution.get("min_moves_to_exit")
         min_dirs = solution.get("min_direction_types_to_exit")
+        solution_meander_score = solution.get("solution_meander_score")
         solution_hash = solution.get("solution_hash")
         level_hash = solution.get("level_hash")
         program_text = solution.get("solution_program", "")
@@ -450,6 +476,17 @@ class LevelBrowserApp:
         lines.append(f"solution_steps: {steps}")
         lines.append(f"min_moves_to_exit: {min_moves}")
         lines.append(f"min_direction_types_to_exit: {min_dirs}")
+        if meander is not None:
+            lines.append(
+                "solution_meander_score: "
+                f"{meander.score:.2f} (ineff={meander.inefficiency_ratio:.3f}, "
+                f"coverage={meander.coarse_coverage_ratio:.3f}, spread={meander.spread_ratio:.3f}, "
+                f"turns={meander.significant_turns})"
+            )
+        elif isinstance(solution_meander_score, (int, float)):
+            lines.append(f"solution_meander_score: {float(solution_meander_score):.2f}")
+        else:
+            lines.append("solution_meander_score: unavailable")
         lines.append(f"solution_hash: {solution_hash}")
         lines.append(f"level_hash: {level_hash}")
 

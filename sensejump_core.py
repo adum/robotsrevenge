@@ -55,6 +55,20 @@ class RunResult:
 
 
 @dataclass(frozen=True)
+class SolutionMeanderMetrics:
+    outcome: str
+    score: float
+    movement_steps: int
+    displacement: int
+    unique_cells: int
+    spread_ratio: float
+    coarse_coverage_ratio: float
+    inefficiency_ratio: float
+    significant_turns: int
+    significant_turn_ratio: float
+
+
+@dataclass(frozen=True)
 class GenerateOptions:
     width: int = 11
     height: int = 11
@@ -861,6 +875,185 @@ def minimum_distinct_directions_to_exit(level: Level) -> int | None:
         if _can_escape_with_direction_mask(level, direction_mask):
             return direction_mask.bit_count()
     return None
+
+
+def _simulate_movement_trace(
+    level: Level,
+    program: list[Instruction],
+    max_steps: int | None = None,
+) -> tuple[str, list[tuple[int, int]], list[int]]:
+    """
+    Simulates only movement geometry for a program.
+    Returns (outcome, visited_path_cells, move_direction_indices).
+    """
+    x = level.start_x
+    y = level.start_y
+    dir_index = NORTH_DIR
+    pc = 0
+    steps = 0
+    n = len(program)
+    limit = level.execution_limit if max_steps is None else max_steps
+    if limit <= 0:
+        limit = 1
+
+    path: list[tuple[int, int]] = [(x, y)]
+    move_dirs: list[int] = []
+
+    if n <= 0:
+        return "invalid", path, move_dirs
+
+    while steps < limit:
+        inst = program[pc]
+        op = inst.op.upper()
+
+        if op == "F":
+            dx, dy = DIR_DELTAS[dir_index]
+            nx = x + dx
+            ny = y + dy
+            steps += 1
+            if not in_bounds(nx, ny, level.width, level.height):
+                return "escape", path, move_dirs
+            if level.board[ny][nx]:
+                return "crash", path, move_dirs
+            x = nx
+            y = ny
+            path.append((x, y))
+            move_dirs.append(dir_index)
+            pc = wrap(pc + 1, n)
+            continue
+
+        if op == "L":
+            dir_index = wrap(dir_index - 1, 4)
+            pc = wrap(pc + 1, n)
+            steps += 1
+            continue
+
+        if op == "R":
+            dir_index = wrap(dir_index + 1, 4)
+            pc = wrap(pc + 1, n)
+            steps += 1
+            continue
+
+        if op == "S":
+            dx, dy = DIR_DELTAS[dir_index]
+            nx = x + dx
+            ny = y + dy
+            blocked = in_bounds(nx, ny, level.width, level.height) and level.board[ny][nx]
+            pc = wrap(pc + (1 if blocked else 2), n)
+            steps += 1
+            continue
+
+        if op == "J":
+            offset = inst.arg if isinstance(inst.arg, int) else 1
+            if offset == 0:
+                offset = 1
+            pc = wrap(pc + offset, n)
+            steps += 1
+            continue
+
+        return "invalid", path, move_dirs
+
+    return "timeout", path, move_dirs
+
+
+def solution_meander_metrics(
+    level: Level,
+    program: list[Instruction],
+    max_steps: int | None = None,
+) -> SolutionMeanderMetrics:
+    """
+    Returns a macro-level meander score (0..100) for the provided program trace.
+    Straight/direct paths score low; broad, inefficient paths that visit more
+    of the board with meaningful turns score higher.
+    """
+    outcome, path, move_dirs = _simulate_movement_trace(level, program, max_steps)
+    movement_steps = len(move_dirs)
+    unique_cells = len(set(path))
+
+    if movement_steps <= 0:
+        return SolutionMeanderMetrics(
+            outcome=outcome,
+            score=0.0,
+            movement_steps=0,
+            displacement=0,
+            unique_cells=unique_cells,
+            spread_ratio=0.0,
+            coarse_coverage_ratio=0.0,
+            inefficiency_ratio=0.0,
+            significant_turns=0,
+            significant_turn_ratio=0.0,
+        )
+
+    sx, sy = path[0]
+    ex, ey = path[-1]
+    displacement = abs(ex - sx) + abs(ey - sy)
+    efficiency = min(1.0, displacement / float(movement_steps))
+    inefficiency_ratio = max(0.0, 1.0 - efficiency)
+
+    xs = [x for x, _ in path]
+    ys = [y for _, y in path]
+    bbox_area = (max(xs) - min(xs) + 1) * (max(ys) - min(ys) + 1)
+    board_area = max(1, level.width * level.height)
+    spread_ratio = min(1.0, bbox_area / float(board_area))
+
+    min_dim = max(1, min(level.width, level.height))
+    coarse_cell_span = max(3, int(round(min_dim / 6.0)))
+    coarse_w = max(1, int(math.ceil(level.width / float(coarse_cell_span))))
+    coarse_h = max(1, int(math.ceil(level.height / float(coarse_cell_span))))
+    coarse_total = max(1, coarse_w * coarse_h)
+    coarse_bins_visited = {
+        (min(coarse_w - 1, x // coarse_cell_span), min(coarse_h - 1, y // coarse_cell_span))
+        for x, y in path
+    }
+    coarse_coverage_ratio = min(1.0, len(coarse_bins_visited) / float(coarse_total))
+
+    significant_turns = 0
+    significant_turn_ratio = 0.0
+    if len(move_dirs) >= 2:
+        run_lengths: list[int] = []
+        current_dir = move_dirs[0]
+        current_len = 1
+        for direction in move_dirs[1:]:
+            if direction == current_dir:
+                current_len += 1
+                continue
+            run_lengths.append(current_len)
+            current_dir = direction
+            current_len = 1
+        run_lengths.append(current_len)
+
+        min_significant_run = max(3, int(round(min_dim * 0.06)))
+        for idx in range(1, len(run_lengths)):
+            if run_lengths[idx - 1] >= min_significant_run and run_lengths[idx] >= min_significant_run:
+                significant_turns += 1
+        expected_turns = max(1.0, movement_steps / float(max(1, min_significant_run * 3)))
+        significant_turn_ratio = min(1.0, significant_turns / expected_turns)
+
+    macro_coverage = 0.60 * coarse_coverage_ratio + 0.40 * spread_ratio
+    turn_factor = 0.65 + 0.35 * significant_turn_ratio
+    score_01 = max(0.0, min(1.0, inefficiency_ratio * macro_coverage * turn_factor))
+    score = round(score_01 * 100.0, 3)
+
+    return SolutionMeanderMetrics(
+        outcome=outcome,
+        score=score,
+        movement_steps=movement_steps,
+        displacement=displacement,
+        unique_cells=unique_cells,
+        spread_ratio=spread_ratio,
+        coarse_coverage_ratio=coarse_coverage_ratio,
+        inefficiency_ratio=inefficiency_ratio,
+        significant_turns=significant_turns,
+        significant_turn_ratio=significant_turn_ratio,
+    )
+
+
+def solution_meander_score(
+    level: Level,
+    program: list[Instruction],
+    max_steps: int | None = None,
+) -> float:
+    return solution_meander_metrics(level, program, max_steps).score
 
 
 def has_meaningless_jump_instruction(program: list[Instruction]) -> bool:

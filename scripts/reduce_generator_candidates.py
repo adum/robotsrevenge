@@ -46,21 +46,25 @@ def candidate_score_tuple(
     min_moves_to_exit: int | None,
     min_direction_types_to_exit: int | None,
     solution_steps: int | None,
+    meander_score: float | None,
 ) -> tuple:
     moves = -1 if min_moves_to_exit is None else int(min_moves_to_exit)
     dirs = -1 if min_direction_types_to_exit is None else int(min_direction_types_to_exit)
     steps = -1 if solution_steps is None else int(solution_steps)
+    meander = -1.0 if meander_score is None else float(meander_score)
     if metric == "solution_steps":
-        return (steps, dirs, moves)
+        return (steps, dirs, moves, meander)
+    if metric == "meander_score":
+        return (meander, dirs, moves, steps)
     if metric == "min_direction_types_to_exit":
-        return (dirs, moves, steps)
+        return (dirs, moves, steps, meander)
     if metric == "combined":
         # Lexicographic combined objective:
         # 1) harder exit-direction requirement
         # 2) larger movement-only shortest path
         # 3) longer known solution trace
-        return (dirs, moves, steps)
-    return (moves, dirs, steps)
+        return (dirs, moves, steps, meander)
+    return (moves, dirs, steps, meander)
 
 
 def load_invalid_map(report_path: Path | None) -> dict[tuple[str, str, int], list[str]]:
@@ -112,9 +116,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--metric",
-        choices=("min_moves_to_exit", "solution_steps", "min_direction_types_to_exit", "combined"),
-        default="min_moves_to_exit",
-        help="Primary selection metric (default: min_moves_to_exit).",
+        choices=("min_moves_to_exit", "solution_steps", "min_direction_types_to_exit", "meander_score", "combined"),
+        default="meander_score",
+        help="Primary selection metric (default: meander_score).",
     )
     parser.add_argument(
         "--check-report",
@@ -185,12 +189,26 @@ def main(argv: list[str]) -> int:
                 min_moves = solution_data.get("min_moves_to_exit")
                 min_dirs = solution_data.get("min_direction_types_to_exit")
                 solution_steps = solution_data.get("solution_steps")
+                meander_score = solution_data.get("solution_meander_score")
                 if min_moves is None:
                     min_moves = core.minimum_moves_to_exit(level)
                 if min_dirs is None:
                     min_dirs = core.minimum_distinct_directions_to_exit(level)
+                if meander_score is None:
+                    program_text = solution_data.get("solution_program")
+                    if isinstance(program_text, str) and program_text.strip():
+                        try:
+                            program = core.parse_program_text(program_text)
+                            meander_score = core.solution_meander_score(level, program)
+                        except Exception:  # noqa: BLE001
+                            meander_score = None
+                else:
+                    try:
+                        meander_score = float(meander_score)
+                    except (TypeError, ValueError):
+                        meander_score = None
 
-                score_tuple = candidate_score_tuple(args.metric, min_moves, min_dirs, solution_steps)
+                score_tuple = candidate_score_tuple(args.metric, min_moves, min_dirs, solution_steps, meander_score)
                 by_level.setdefault(level_id, []).append(
                     {
                         "generator": generator_id,
@@ -202,6 +220,7 @@ def main(argv: list[str]) -> int:
                         "min_moves_to_exit": min_moves,
                         "min_direction_types_to_exit": min_dirs,
                         "solution_steps": solution_steps,
+                        "solution_meander_score": meander_score,
                         "level_hash": solution_data.get("level_hash"),
                         "solution_hash": solution_data.get("solution_hash"),
                     }
@@ -245,6 +264,7 @@ def main(argv: list[str]) -> int:
                     "min_moves_to_exit": best["min_moves_to_exit"],
                     "min_direction_types_to_exit": best["min_direction_types_to_exit"],
                     "solution_steps": best["solution_steps"],
+                    "solution_meander_score": best["solution_meander_score"],
                     "level_hash": best["level_hash"],
                     "solution_hash": best["solution_hash"],
                     "candidate_count": len(candidates),
@@ -255,6 +275,7 @@ def main(argv: list[str]) -> int:
                             "min_moves_to_exit": candidate["min_moves_to_exit"],
                             "min_direction_types_to_exit": candidate["min_direction_types_to_exit"],
                             "solution_steps": candidate["solution_steps"],
+                            "solution_meander_score": candidate["solution_meander_score"],
                         }
                         for candidate in sorted(candidates, key=lambda item: item["score_tuple"], reverse=True)
                     ],
