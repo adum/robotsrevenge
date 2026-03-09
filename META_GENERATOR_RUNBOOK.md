@@ -5,6 +5,7 @@ This document explains how to run and configure the new multi-generator pipeline
 1. `scripts/meta_generate_levels.py` (phase 1: produce candidate pools)
 2. `scripts/check_generated_levels.py` (optional: check/prune weak candidates)
 3. `scripts/reduce_generator_candidates.py` (phase 1.5: per-generator best-of across runs)
+4. `scripts/assemble_level_set.py` (phase 2: combine best-of pools into final consecutive set)
 
 This runbook covers exact commands, config files, and output structure.
 
@@ -241,7 +242,7 @@ Select one candidate per level per generator across runs:
 ```bash
 python3 scripts/reduce_generator_candidates.py \
   --root generated_campaign \
-  --metric min_moves_to_exit \
+  --metric meander_score \
   --check-report generated_campaign/check_report.json \
   --overwrite
 ```
@@ -251,6 +252,7 @@ Metrics:
 - `min_moves_to_exit`
 - `solution_steps`
 - `min_direction_types_to_exit`
+- `meander_score` (default)
 - `combined`
 
 Output:
@@ -262,15 +264,71 @@ generated_campaign/<generator>/best_of/
   manifest.json
 ```
 
-## 9) Typical End-to-End Workflow
+## 9) Phase 2: Final Assembly Across Generators
+
+Combine all per-generator `best_of` outputs into one canonical final folder:
+
+```bash
+python3 scripts/assemble_level_set.py \
+  --root generated_campaign \
+  --levels-per-size-factor 2.0 \
+  --overwrite
+```
+
+Reproducible run with explicit seed:
+
+```bash
+python3 scripts/assemble_level_set.py \
+  --root generated_campaign \
+  --levels-per-size-factor 2.0 \
+  --seed 123456789 \
+  --overwrite
+```
+
+Preview selection without writing files:
+
+```bash
+python3 scripts/assemble_level_set.py \
+  --root generated_campaign \
+  --levels-per-size-factor 2.0 \
+  --dry-run
+```
+
+How `--levels-per-size-factor` works:
+
+- integer part = guaranteed picks per size bucket
+- fractional part = probabilistic extra pick per size bucket
+- example: `2.3` means target 2 picks for every size, plus a 30% chance of 1 extra pick per size
+
+Assembly output:
+
+```text
+generated_campaign/final/
+  levels/
+    1.level
+    2.level
+    ...
+  solutions/
+    1.solution.json
+    2.solution.json
+    ...
+  manifest.json
+```
+
+Notes:
+
+- Final level IDs are always consecutive starting at 1.
+- Source level IDs are not preserved as final IDs; mapping is recorded in `manifest.json`.
+
+## 10) Typical End-to-End Workflow
 
 1. Generate candidates (all generators, multiple runs, curated early levels).
 2. Run checker in report mode; inspect reject reasons.
 3. Re-run checker in enforce mode if you want automatic pruning.
 4. Run reducer to produce per-generator best-of pools.
-5. Feed `best_of` outputs into final assembly script (phase 2 combiner).
+5. Run assembler to produce `generated_campaign/final`.
 
-## 10) Common Operational Flags
+## 11) Common Operational Flags
 
 - `--fail-fast`: stop at first failing run
 - `--overwrite-run-dirs`: overwrite existing run folders
@@ -278,7 +336,7 @@ generated_campaign/<generator>/best_of/
 - `--pass-verbose`: pass `--verbose` to child generators when supported
 - `--show-command`: print full invoked child command lines
 
-## 11) Troubleshooting Notes
+## 12) Troubleshooting Notes
 
 - If a generator fails often, check terminal output first; `generator.log` contains command/timing/return code.
 - If a flag appears ignored, confirm the target generator supports it in `--help`.
